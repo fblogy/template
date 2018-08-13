@@ -1,0 +1,4897 @@
+\section{DataStructure}
+\subsection{Fenwick}
+\begin{lstlisting}[language=C++]
+// [1,n] , init!!
+template<class T>
+struct Fenwick{
+#define lb(x) ((x)&-(x))
+    static const int N = 100001;
+    int n;T a[N];
+    void ini(int _n){ fill_n(a+1,n=_n,0);}
+    void Pre(){ for(int i=1,j=i+lb(i);i<=n;++i,j=i+lb(i)) if(j<=n) a[j]+=a[i];}
+    void add(int x,T d){ for(;x<=n;x+=lb(x)) a[x]+=d;}
+    T sum(int x){ T r=0;for(;x>=1;x^=lb(x)) r+=a[x];return r;}
+};
+\end{lstlisting}
+\subsection{KdTree}
+\begin{lstlisting}[language=C++]
+// =============== MemoryPool ===============
+template<class T>struct Pool{
+    T *a,**q; int pa,pq;
+    Pool(int MAXN){a=new T[MAXN];q=new T*[MAXN];pa=pq=0;}
+//  ~Pool(){delete[] a; delete[] q;}
+    void clear(){pa=pq=0;}
+    T* NEW(){return pq ? q[--pq] : &a[pa++];}
+    void DELETE(T* x){q[pq++]=x; return;}
+    int IDX(T*x){return x-a;}
+};
+
+typedef long long LL;
+const LL INF=0x3f3f3f3f3f3f3f3fLL;
+#define REP(i,n) for(int i=0;i<n;++i)
+
+// =============== KD-Tree ===============
+#define rangeCalc
+template<class T>inline bool updmx(T& A,const T& B){return A<B?A=B,1:0;}
+template<class T>inline bool updmn(T& A,const T& B){return A>B?A=B,1:0;}
+LL dcmp(const LL& x){return x==0 ? 0 : (x<0 ? -1 : 1);}
+//please KDT::clear() before use
+namespace KDT{
+    const int MAXN=1500010;
+    const double SGTA=0.8;// Scapegoat Tree Const
+    struct Point{
+        int x[2];int i;
+        int& operator[](int i){return x[i];}
+        const int& operator[](int i)const{return x[i];}
+        bool operator<(const Point& B){return x[0]<B.x[0]||(x[0]==B.x[0]&&x[1]<B.x[1]);}
+    };
+    struct ct{
+        int sz;
+        int mxD[2],mnD[2];
+        ct(){sz=0;}
+        explicit ct(const Point& P):sz(1){REP(i,2)mxD[i]=mnD[i]=P[i];}
+        bool empty()const{return sz==0;}
+    }ct0;
+    ct& operator +=(ct& A, const ct& B){
+        if(A.empty())return A=B;
+        if(!B.empty()){
+            A.sz+=B.sz;
+            REP(i,2)updmx(A.mxD[i],B.mxD[i]),updmn(A.mnD[i],B.mnD[i]);
+        }
+        return A;
+    }
+    struct node{
+        node *l,*r;Point v;ct c;
+        node(){}
+        explicit node(const Point& v):v(v),c(ct(v)){}
+    };
+    Pool<node>pool(MAXN);
+    void clear(){pool.clear();}
+    struct cmp{
+        int D;cmp(int D):D(D){}
+        bool operator()(const Point& A,const Point& B)const{return A[D]<B[D];}
+    };
+    node* build(int d,Point* A,int l,int r){
+        if(l>r) return 0;
+        int M=(l+r)>>1;
+        nth_element(A+l,A+M,A+r+1,cmp(d));
+        node *o=new(pool.NEW())node(A[M]);
+        o->l=build(!d,A,l,M-1); o->r=build(!d,A,M+1,r);
+        if(o->l)o->c+=o->l->c;
+        if(o->r)o->c+=o->r->c;
+        return o;
+    }
+    Point A[MAXN];int AN;
+    void eraseAll(node* o){if(!o)return;A[++AN]=o->v;eraseAll(o->l);eraseAll(o->r);pool.DELETE(o);}
+    void rebuild(node*& o,int d){AN=0;eraseAll(o);o=build(d,A,1,AN);}
+    void insert(node*& rt,const Point& iP){
+        node *np=new(pool.NEW())node(iP);
+        if(!rt){rt=np;return;}
+        static node* sk[MAXN];static int tp;tp=0;
+        node *o=rt;
+        for(int d=0;;d=!d){
+            sk[tp++]=o;
+            o->c+=np->c;
+            if(iP[d]<o->v[d]){
+                if(!o->l){o->l=np;break;}
+                o=o->l;
+            }else{
+                if(!o->r){o->r=np;break;}
+                o=o->r;
+            }
+        }
+        sk[tp++]=o;
+        if(tp<log(rt->c.sz)/log(1/SGTA))return;
+        for(o=sk[--tp];(o->l?o->l->c.sz:0)<SGTA*o->c.sz
+                &&(o->r?o->r->c.sz:0)<SGTA*o->c.sz;o=sk[--tp]);
+        if(o==rt){rebuild(rt,0);return;}
+        node* p=sk[--tp];
+        rebuild(p->l==o?p->l:p->r,tp&1);
+    }
+    LL sqr(int x){return (LL)x*x;}
+    Point qP;
+    LL getdis(node* o){
+        LL res=0;
+        REP(d,2){
+            if(qP[d]<o->c.mnD[d])res+=sqr(o->c.mnD[d]-qP[d]);
+            if(o->c.mxD[d]<qP[d])res+=sqr(qP[d]-o->c.mxD[d]);
+        }
+        return res;
+    }
+    LL res; Point resP;
+    LL res2; Point resP2;
+    void query(int d, node* o){
+        LL d0=0; REP(i,2)d0+=sqr(o->v[i]-qP[i]);
+        if(d0<res||(d0==res&&o->v<resP))res2=res,resP2=resP,res=d0,resP=o->v;
+        else if(d0<res2||(d0==res2&&o->v<resP2))res2=d0,resP2=o->v;
+        LL dl=o->l?getdis(o->l):INF;
+        LL dr=o->r?getdis(o->r):INF;
+        if(dl<dr){
+            if(dl<=res2)query(!d,o->l);
+            if(dr<=res2)query(!d,o->r);
+        }else{
+            if(dr<=res2)query(!d,o->r);
+            if(dl<=res2)query(!d,o->l);
+        }
+    }
+    Point query(node*& rt, const Point& p){
+        qP=p;res=INF;res2=INF;query(0,rt);return resP2;
+    }
+}
+\end{lstlisting}
+\subsection{ST}
+\begin{lstlisting}[language=C++]
+// [0,n)
+struct ST{
+    static const int N = 101010;
+    int a[20][N] , lg[N] , (*f)(int,int);
+    void Build(int *v,int n,int (*_f)(int,int)){
+        f = _f;rep(i,0,n) a[0][i] = v[i];
+        rep(i,2,n+1) lg[i] = lg[i>>1]+1;
+        rep(i,1,lg[n]+1) rep(j,0,n-(1<<i)+1) a[i][j]=f(a[i-1][j],a[i-1][j+(1<<i>>1)]);
+    }
+    int rmq(int x,int y){
+        if(x>y) swap(x,y);
+        int i=lg[y-x+1];
+        return f(a[i][x] , a[i][y+1-(1<<i)]);
+    }
+};
+\end{lstlisting}
+
+\section{Graph}
+\subsection{BCC}
+\begin{lstlisting}[language=C++]
+// key contains the id of edges
+// _ starts from 0
+namespace BCC{
+    const int N = 202020;
+    vi key , bcc[N];
+    int dfn[N] , low[N] , id[N] , st[N] , _st , _;
+    void dfs(int c,int dep,vector<pii> g[]){
+        int cc=0;st[_st++]=c;
+        dfn[c]=low[c]=dep;
+        for(auto e:g[c]){
+            int t=e.fi;
+            if(!dfn[t]){
+                dfs(t,dep+1,g);
+                low[c]=min(low[c],low[t]);
+                if(low[t]>dfn[c]) key.pb(e.se);
+            } else if(dfn[t] != dfn[c] - 1 || cc++)
+                low[c] = min(low[c] , dfn[t]);
+        }
+        if(low[c]==dfn[c]){
+            do{id[st[--_st]]=_;}while(st[_st]!=c);
+            _++;
+        }
+    }
+    int solve(int n,vector<pii> g[]){
+        fill_n(dfn,n,_=0);
+        fill_n(low,n,_st=0);
+        fill_n(bcc,n,key=vi());
+        rep(i,0,n) if(!dfn[i]) dfs(i,1,g);
+        rep(i,0,n) for(auto j:g[i]) if(id[i]!=id[j.fi])
+            bcc[id[i]].pb(id[j.fi]);
+        return _;
+    }
+};
+\end{lstlisting}
+\subsection{DCC}
+\begin{lstlisting}[language=C++]
+// key is cuts
+// dcc is edges , i->n+j , i(points) , j(bcc_block)
+// be care of isolated point
+namespace DCC{
+    const int N = 202020;
+    vi key , dcc[N];
+    int dfn[N] , low[N] , st[N] , _st , _;
+    void dfs(int c,int dep,const vi g[]){
+        int cc=0,out=1<dep;st[_st++]=c;
+        dfn[c]=low[c]=dep;
+        for(auto t:g[c])
+            if(!dfn[t]){
+                dfs(t,dep+1,g);
+                low[c]=min(low[c],low[t]);
+                if(low[t]>=dfn[c]){
+                    if(++out==2) key.pb(c);
+                    while(st[--_st]!=t) dcc[st[_st]].pb(_);
+                    dcc[c].pb(_);dcc[t].pb(_++);
+                }
+            } else if(dfn[t] != dfn[c] - 1 || cc++)
+                low[c] = min(low[c] , dfn[t]);
+    }
+    int solve(int n,const vi g[]){// n is size of points
+        fill_n(dfn,n,_=0);
+        fill_n(low,n,_st=0);
+        fill_n(dcc,n,key=vi());
+        rep(i,0,n) if(!dfn[i]) dfs(i,1,g);
+        rep(i,0,n) if(sz(dcc[i]) == 0) dcc[i].pb(_++);
+        return _;
+    }
+}
+\end{lstlisting}
+\subsection{Dinic}
+\begin{lstlisting}[language=C++]
+// [0,n) init!!
+template<class T>
+struct Dinic{
+    const static int N = 10101 , M = N * 10;
+    int s , t , n , h[N] , cur[N] , level[N] , q[N] , e , ne[M] , to[M];
+    T cap[M] , flow;
+    void liu(int u,int v,T w){ to[e] = v;ne[e] = h[u];cap[e] = w;h[u] = e++;}
+    void link(int u,int v,T w){ liu(u , v , w);liu(v , u , 0);}
+    void ini(int _n = N) { fill(h , h + (n=_n) , -1);e = 0;}
+    bool bfs(){
+        int L = 0 , R = 0;
+        fill(level , level + n , -1);
+        level[q[R++] = s] = 0;
+        while(L < R && level[t] == -1){
+            int c = q[L++];
+            for(int k=h[c];~k;k=ne[k])
+                if(cap[k] > 0 && level[to[k]] == -1)
+                    level[q[R++] = to[k]] = level[c] + 1;
+        }
+        return ~level[t];
+    }
+    T dfs(int c,T mx){
+        if(c == t) return mx;
+        T ret = 0;
+        for(int &k = cur[c];~k;k = ne[k]){
+            if(level[to[k]] == level[c] + 1 && cap[k] > 0){
+                T flow = dfs(to[k] , min(mx , cap[k]));
+                ret += flow;cap[k] -= flow , cap[k^1] += flow;mx -= flow;
+                if(!mx) return ret;
+            }
+        }
+        level[c] = -1;
+        return ret;
+    }
+    T run(int _s,int _t){
+        s = _s , t = _t;
+        flow = 0;
+        while(bfs()){
+            copy(h , h + n , cur);
+            flow += dfs(s,~0U>>1);
+        }
+        return flow;
+    }
+};
+\end{lstlisting}
+\subsection{KM}
+\begin{lstlisting}[language=C++]
+// init!! , id starts from 0
+template<class T>
+struct KM {
+    static const int N = 505;
+    static const T inf = ~0U>>2;
+    int n, m, left[N], pre[N], used[N];
+    T g[N][N], Lx[N], Ly[N], slack[N];
+    void ini(int _n, int _m) {
+        n = _n , m = _m;
+        rep(i,0,n) rep(j,0,m) g[i][j] = -inf;
+    }
+    void go(int now) {
+        rep(i,0,m+1) used[i]=0,slack[i]=inf;
+        left[m] = now;int u,v;
+        for(u=m;~left[u];u=v){
+            used[u] = 1;
+            T d = inf;
+            rep(i,0,m) if(!used[i]){
+                T tmp = Lx[left[u]] + Ly[i] - g[left[u]][i];
+                if(tmp < slack[i]) slack[i] = tmp, pre[i] = u;
+                if(slack[i] < d) d = slack[v=i];
+            }
+            rep(i,0,m+1) if(used[i]) Lx[left[i]] -= d , Ly[i] += d;
+                else slack[i] -= d;
+        }
+        for(;u!=m;left[u]=left[pre[u]],u=pre[u]);
+    }
+    T run() {
+        fill_n(Lx,n,0);fill_n(Ly,m,0);
+        fill_n(left,m,-1);
+        rep(i,0,n) go(i);
+        T ans = 0;
+        rep(i,0,n) ans += Lx[i];
+        rep(i,0,m) ans += Ly[i];
+        return -ans;
+    }
+};
+\end{lstlisting}
+\subsection{Maxmatch}
+\begin{lstlisting}[language=C++]
+namespace MaxMatch{
+    const int N = 5050;
+    int link[N],vis[N];
+    int dfs(int c,vi g[]){
+        for(auto t : g[c])
+            if(!vis[t]){
+                vis[t] = true;
+                if(link[t]==-1||dfs(link[t],g))
+                    return link[t]=c,1;
+            }
+        return 0;
+    }
+    int solve(int n,int m,vi g[]){
+        fill_n(link,m,-1);
+        int ret=0;
+        rep(i,0,n){
+            memset(vis,0,m*sizeof(int));
+            ret += dfs(i,g);
+        }
+        return ret;
+    }
+}
+\end{lstlisting}
+\subsection{MinCostMaxFlow}
+\begin{lstlisting}[language=C++]
+// [0,n) , init!! , inf modify
+template<class U,class V>
+struct MCMF{
+    static const int N = 204 , M = 101010;
+    int h[N] , ing[N] , pre[N] , to[M] , ne[M] , e , s , t , n;
+    U cap[M];V dis[N] , cost[M];
+    void ini(int _n = N){ fill(h , h + (n=_n) , -1);e = 0;}
+    void liu(int u,int v,U c,V w){ to[e] = v;ne[e] = h[u];cap[e] = c;cost[e] = w;h[u] = e++;}
+    void link(int u,int v,U c,V w){ liu(u,v,c,w);liu(v,u,0,-w); }
+    bool spfa(){
+        queue<int> Q;
+        fill(dis,dis+n,inf);
+        ing[s] = true , dis[s] = 0;
+        Q.push(s);
+        while(!Q.empty()){
+            int c = Q.front();Q.pop();ing[c] = false;
+            for(int k=h[c];~k;k=ne[k]){
+                int v = to[k];
+                if(cap[k] <= 0) continue;
+                if(dis[c] + cost[k] < dis[v]){
+                    dis[v] = dis[c] + cost[k];
+                    pre[v] = k;
+                    if(!ing[v]) Q.push(v) , ing[v] = true;
+                }
+            }
+        }
+        return dis[t] != inf;
+    }
+    U flow;V mincost;
+    pair<U,V> run(int _s,int _t){
+        s = _s , t = _t;
+        flow = mincost = 0;
+        while(spfa()){
+            U pl = inf;int p , k;
+            for(p=t;p!=s;p=to[k^1]) pl = min(pl , cap[k=pre[p]]);
+            for(p=t;p!=s;p=to[k^1]){
+                k = pre[p];
+                cap[k] -= pl;
+                cap[k^1] += pl;
+            }
+            mincost += pl * dis[t];
+            flow += pl;
+        }
+        return make_pair(flow , mincost);
+    }
+};
+\end{lstlisting}
+\subsection{SCC}
+\begin{lstlisting}[language=C++]
+// _ starts from 0
+namespace SCC{
+    const int N = 100050;
+    int dfn[N],low[N],id[N],st[N],_st,_,cc;
+    void dfs(int c,vi g[]){
+        dfn[c]=low[c]=++cc;
+        st[_st++]=c;
+        for(auto t:g[c])
+            if(!dfn[t])
+                dfs(t,g),low[c]=min(low[c],low[t]);
+            else if(!id[t])
+                low[c]=min(low[c],dfn[t]);
+        if(low[c]==dfn[c]){
+            ++_;
+            do{id[st[--_st]]=_;}while(st[_st]!=c);
+        }
+    }
+    vi ng[N];
+    int solve(int n,vi g[]){
+        fill_n(dfn,n,cc=0);
+        fill_n(low,n,_st=0);
+        fill_n(id,n,_=0);
+        rep(i,0,n) if(!dfn[i]) dfs(i,g);
+        rep(i,0,n) --id[i];
+        fill_n(ng,_,vi());
+        rep(i,0,n) for(auto j:g[i]) if(id[i]!=id[j]) ng[id[i]].pb(id[j]);
+        return _;
+    }
+}
+\end{lstlisting}
+\subsection{ZKW}
+\begin{lstlisting}[language=C++]
+// [0,n) , init!! , inf modify
+template<class U,class V>
+struct ZKW{
+    static const int N = 1010 , M = 40404;
+    int h[N] , ing[N] , v[N] , to[M] , ne[M] , e , s , t , n;
+    U cap[M];V dis[N] , cost[M];
+    void ini(int _n = N){ fill(h , h + (n=_n) , -1);e = 0;}
+    void liu(int u,int v,U c,V w){ to[e] = v;ne[e] = h[u];cap[e] = c;cost[e] = w;h[u] = e++;}
+    void link(int u,int v,U c,V w){ liu(u,v,c,w);liu(v,u,0,-w); }
+    void spfa(){
+        queue<int> Q;
+        fill(dis,dis+n,inf);
+        ing[t] = true , dis[t] = 0;
+        Q.push(t);
+        while(!Q.empty()){
+            int c = Q.front();Q.pop();ing[c] = false;
+            for(int k=h[c];~k;k=ne[k]){
+                int v = to[k];
+                if(cap[k^1] <= 0) continue;
+                if(dis[c] + cost[k^1] < dis[v]){
+                    dis[v] = dis[c] + cost[k^1];
+                    if(!ing[v]) Q.push(v) , ing[v] = true;
+                }
+            }
+        }
+    }
+    U flow;V mincost;
+    bool modlable(){
+        V Min = inf;
+        rep(c,0,n) if(v[c])
+            for(int k=h[c];~k;k=ne[k]){
+                int t=to[k];
+                if(!v[t] && cap[k] > 0)
+                    Min = min(Min , dis[t] + cost[k] - dis[c]);
+            }
+        if(Min == inf) return false;
+        rep(i,0,n) if(v[i]) dis[i] += Min;
+        return true;
+    }
+    U dfs(int c,U mx){
+        if(c == t) return flow += mx , mincost += mx * dis[s] , mx;
+        v[c] = true;U ret = 0;
+        for(int k=h[c];~k;k=ne[k]){
+            int t = to[k];
+            if(!v[t] && cap[k] > 0 && dis[c] - cost[k] == dis[t]){
+                U tmp = dfs(t , min(cap[k] , mx - ret));
+                cap[k] -= tmp , cap[k^1] += tmp;
+                ret += tmp;
+                if(ret == mx) return ret;
+            }
+        }
+        return ret;
+    }
+    pair<U,V> run(int _s,int _t){
+        s = _s , t = _t;
+        spfa();
+        flow = mincost = 0;
+        do do memset(v,0,sizeof(v[0])*n);
+            while(dfs(s,inf));
+        while(modlable());
+        return make_pair(flow , mincost);
+    }
+};
+\end{lstlisting}
+
+\section{Math}
+\subsection{FFT}
+\begin{lstlisting}[language=C++]
+// len = 2^x >= max(sz(a),sz(b))*2
+namespace FFT{
+    void fft(vir *F,int len,int o){
+        int j = 0 , k , h;
+        rep(i,0,len-1){
+            if(i < j) swap(F[i] , F[j]);
+            for(k=len;j>=(k>>=1);j&=~k);  j|=k;
+        }
+        for(h=1;h<len;h<<=1){
+            vir wn(cos(pi*o/h),sin(pi*o/h));
+            for(j=0;j<len;j+=h<<1){
+                vir w(1.);
+                for(k=j;k<j+h;++k,w=w*wn){
+                    vir b = w*F[k+h];
+                    F[k+h] = F[k]-b , F[k] = F[k]+b;
+                }
+            }
+        }
+        if(o == -1) rep(i,0,len) F[i] = F[i]/(db)len;
+    }
+    void mult(vir *a,vir *b,int len){
+        fft(a,len,1);fft(b,len,1);
+        rep(i,0,len) a[i] = a[i] * b[i];
+        fft(a,len,-1);
+    }
+}
+\end{lstlisting}
+\subsection{Matrix}
+\begin{lstlisting}[language=C++]
+typedef vector<vi> MM;
+MM operator * (const MM a,const MM b){
+    int L = sz(a);MM r(L,vi(L,0));
+    rep(i,0,L) rep(j,0,L) rep(k,0,L) r[i][j] += a[i][k] * b[k][j];
+    return r;
+}
+MM operator ^ (MM a,ll t){
+    int L = sz(a);MM r(L,vi(L,0));
+    rep(i,0,L) r[i][i] = 1;
+    for(;t;t>>=1,a=a*a) if(t&1) r=r*a;
+    return r;
+}
+\end{lstlisting}
+\subsection{NTT}
+\begin{lstlisting}[language=C++]
+// init!! , G is root , B is base , len = 2^x
+namespace NTT {
+    const int N = (1<<19) , P = (479 << 21) + 1, G = 3 , B = 2;
+    int w[2][N],rev[N];
+    ll Pow(ll x, ll t){ll r=1;for(;t;t>>=1,x=x*x%P)if(t&1)r=r*x%P;return r;}
+    void ini(){
+        ll t = Pow(G,(P-1)/N);
+        w[0][0] = w[1][0] = 1;
+        rep(i,1,N) w[0][i] = t*w[0][i-1]%P;
+        rep(i,1,N) w[1][i] = w[0][N-i];
+        rep(i,0,N) for(int j=1;j<N;j*=B) (rev[i]<<=1)|=(i/j)%B;
+    }
+    void ntt(int *a,int n,int o){
+        int tt = N/n;
+        rep(i,0,n){
+            int j = rev[i]/tt;
+            if(i<j) swap(a[i],a[j]);
+        }
+        for(int i=1;i<n;i<<=1)
+            for(int j=0,t=N/(i+i);j<n;j+=i+i)
+                for(int k=j,l=0;k<j+i;++k,l+=t){
+                    int b = (ll)a[k+i]*w[o][l]%P;
+                    a[k+i] = a[k]-b; if(a[k+i]<0) a[k+i]+=P;
+                    a[k] = a[k]+b; if(a[k]>=P) a[k]-=P;
+                }
+        if(o == 1){
+            ll inv = Pow(n,P-2);
+            rep(i,0,n) a[i] = a[i]*inv%P;
+        }
+    }
+    void mult(int *a,int *b,int len){
+        ntt(a,len,0);ntt(b,len,0);
+        rep(i,0,len) a[i] = (ll)a[i]*b[i]%P;
+        ntt(a,len,1);
+    }
+}
+\end{lstlisting}
+\subsection{NTT3}
+\begin{lstlisting}[language=C++]
+// init!! , G is root , B is base , len = 3^x
+namespace NTT3 {
+    const int H = 17 , N = 531441 , P = 258280327 , G = 5 , B = 3;
+    int w[2][N] , rev[N];
+    void ini(){
+        ll t = Pow(G,(P-1)/N);
+        w[0][0] = w[1][0] = 1;
+        rep(i,1,N) w[0][i] = w[0][i-1]*t%P;
+        rep(i,1,N) w[1][i] = w[0][N-i];
+        rep(i,0,N) for(int j=1;j<N;j*=B) (rev[i]*=B)+=i/j%B;
+    }
+    void ntt(int *a,int n,int o){ // N -> max array size
+        int tt = N/n , d = N/B;
+        rep(i,0,n){
+            int j = rev[i]/tt;
+            if(i<j) swap(a[i],a[j]);
+        }
+        for(int i=1;i<n;i*=B)
+            for(int j=0,t=N/(i*B);j<n;j+=i*B)
+                for(int k=0,l=0;k<i;++k,l+=t){
+                    int x = a[j+k] , y = a[j+k+i] , z = a[j+k+i+i];
+                    a[j+k] = (x + (ll)y*w[o][l] + (ll)z*w[o][l+l])%P;
+                    a[j+k+i] = (x + (ll)y*w[o][l+d] + (ll)z*w[o][(l+l+d+d)%N])%P;
+                    a[j+k+i+i] = (x + (ll)y*w[o][l+d+d] + (ll)z*w[o][(l+d+d)*2-N])%P;
+                }
+        if(o == 1){
+            ll inv = Pow(n,P-2);
+            rep(i,0,n) a[i] = a[i]*inv%P;
+        }
+    }
+    void mult(int *a,int *b,int len){
+        ntt(a,len,0);ntt(b,len,0);
+        rep(i,0,len) a[i] = (ll)a[i]*b[i]%P;
+        ntt(a,len,1);
+    }
+}
+\end{lstlisting}
+\subsection{Prepare}
+\begin{lstlisting}[language=C++]
+//InverseElement
+// mod is a prime
+int v[N];
+rep(i,1,N) v[i] = Pow(i , mod - 2);
+// O(nlgn)
+v[1] = Pow(1,mod-2);
+rep(i,2,N){
+    int t = mod/i , k = (ll)v[mod-t*i] * t % mod;
+    v[i] = (ll)i * k % mod * k % mod;
+}
+// O(n)
+int pri[N] , _p , vis[N];
+v[1] = Pow(1,mod-2);
+rep(i,2,N) v[i] = 1;
+rep(i,2,N){
+    if(!vis[i]) pri[_p++] = i , v[i] = Pow(i,mod-2);
+    for(int j=0,o=0;j<_p&&(o=pri[j]*i)<N;++j){
+        vis[o] = true;
+        v[o] = (ll)v[pri[j]] * v[i] % mod;
+        if(pri[j]%i == 0) break;
+    }
+}
+// O(n)
+
+// Mobius
+int mu[N];
+// all
+mu[1] = 1;
+rep(i,1,N) for(int j=i+i;j<N;j+=i) mu[j] -= mu[i];
+// O(nlgn)
+int pri[N] , _p , vis[N];
+mu[1] = 1;
+rep(i,2,N){
+    if(!vis[i]) pri[_p++] = i , mu[i] = -1;
+    for(int j=0,o=0;j<_p&&(o=pri[j]*i)<N;++j){
+        vis[o] = true;
+        if(i%pri[j]) mu[o] = -mu[i];
+        else{ mu[o] = 0; break; }
+    }
+}
+// O(n)
+
+// Phi
+int pri[N] , _p , vis[N] , phi[N];
+rep(i,2,N){
+    if(!vis[i]) pri[_p++] = i , phi[i] = i-1;
+    for(int j=0,o;j<_p&&(o=pri[j]*i)<N;++j){
+        vis[o] = true;
+        if(i%pri[j]) phi[o] = (pri[j] - 1) * phi[i];
+        else{
+            phi[o] = pri[j] * phi[i];
+            break;
+        }
+    }
+}
+// O(n)
+\end{lstlisting}
+
+\section{Others}
+\subsection{expression\_parse}
+\begin{lstlisting}[language=C++]
+#define ass(x) {if(!(x)) throw 1;}
+string t;
+string::iterator p;
+using val = int;
+int pri(char ch){
+    if(ch == '*') return 3;
+    if(ch == '+') return 2;
+    if(ch == '-') return 2;
+    if(ch == '$') return -1;
+}
+val cal(char ch,val a,val b){
+    if(ch == '+') return a + b;
+}
+
+val next();
+val expr(char pre,val x){
+    if(pri(pre) < pri(*p)){
+        auto op = *p++;
+        return expr(pre , cal(op , x , expr(op , next())));
+    }
+    else return x;
+}
+val next(){
+    if(*p == '('){
+        p++;
+        val res = expr('(' , next());
+        ass(*p++ == ')');
+        return res;
+    } else if(isdigit(*p)){
+        val x = 0;
+        while(isdigit(*p)){
+            ass(*p == '0' || *p == '1');
+            x = x * 2 + *p++ - '0';
+        }
+        return x;
+    } else if(*p == '-'){
+        p++;
+        return -next();
+    }
+}
+
+bool check(){ // s$
+    try{
+        if(count(all(t) , '=') != 1) throw 1;
+        p = t.begin();
+        int res = expr('$' , next());
+        return res == 1;
+    } catch(...){
+        return 0;
+    }
+}
+\end{lstlisting}
+\subsection{head}
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <vector>
+#include <cstdio>
+#include <string>
+#include <cmath>
+#include <set>
+#include <map>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<b;++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+
+int main(){
+
+    return 0;
+}
+\end{lstlisting}
+
+\section{String}
+\subsection{ACAutomaton}
+\begin{lstlisting}[language=C++]
+// [0,L) , N-1 is virtual , 1 is rt , init!!
+struct Trie{
+    static const int N = 101010 , M = 26;
+    int ne[N][M] , fail[N] , fa[N] , rt , L;
+    void ini(){ fill_n(ne[fail[0] = N-1],M,0);L = 0;rt = newnode();}
+    int newnode(){ fill_n(ne[L],M,0); return L++; }
+    void add(char *s){
+        int p = rt;
+        for(int i=0;s[i];++i){
+            int c = s[i] - 'a';// modify
+            if(!ne[p][c]) ne[p][c] = newnode() , fa[L-1] = p;
+            p = ne[p][c];
+        }
+    }
+    void Build(){
+        vi v;v.pb(rt);
+        rep(i,0,sz(v)){
+            int c = v[i];
+            rep(i,0,M) ne[c][i] ?
+                v.pb(ne[c][i]) , fail[ne[c][i]] = ne[fail[c]][i] :
+                ne[c][i] = ne[fail[c]][i];
+        }
+    }
+};
+\end{lstlisting}
+\subsection{DoublingArray}
+\begin{lstlisting}[language=C++]
+namespace Doubling{
+    static const int N = 101010;
+    int t[N] , wa[N] , wb[N] , sa[N] , h[N];
+    void sort(int *x,int *y,int n,int m){
+        rep(i,0,m) t[i] = 0;
+        rep(i,0,n) t[x[y[i]]]++;
+        rep(i,1,m) t[i] += t[i-1];
+        per(i,0,n) sa[--t[x[y[i]]]] = y[i];
+    }
+    bool cmp(int *x,int a,int b,int d){
+        return x[a] == x[b] && x[a+d] == x[b+d];
+    }
+    void da(int *s,int n,int m){
+        int *x=wa,*y=wb;
+        rep(i,0,n) x[i] = s[i] , y[i] = i;
+        sort(x , y , n , m);
+        for(int j=1,p=1;p<n;m=p,j<<=1){
+            p = 0;rep(i,n-j,n) y[p++] = i;
+            rep(i,0,n) if(sa[i] >= j) y[p++] = sa[i] - j;
+            sort(x , y , n , m);
+            swap(x , y);p = 1;x[sa[0]] = 0;
+            rep(i,1,n) x[sa[i]] = cmp(y,sa[i],sa[i-1],j)?p-1:p++;
+        }
+    }
+    void cal_h(int *s,int n,int *rk){
+        int j,k=0;
+        for(int i=1;i<=n;++i) rk[sa[i]] = i;
+        for(int i=0;i<n;h[rk[i++]] = k)
+            for(k&&--k,j=sa[rk[i]-1];s[i+k]==s[j+k];++k);
+    }
+}
+struct DA{ // [0,n] , in[n] = 0 , n load
+    static const int N = 101010;
+    int p[18][N] , rk[N] , in[N] , Log[N] , n;
+    void Build(){
+        Doubling::da(in,n+1,300);
+        Doubling::cal_h(in,n,rk);
+        Log[0] = -1;for(int i=1;i<=n;++i) Log[i] = Log[i-1] + (i==(i&(-i)));
+        for(int i=1;i<=n;++i) p[0][i] = Doubling::h[i];
+        for(int j=1;1<<j<=n;++j){
+            int lim = n+1-(1<<j);
+            for(int i=1;i<=lim;++i)
+                p[j][i] = min(p[j-1][i] , p[j-1][i+(1<<j>>1)]);
+        }
+    }
+    int lcp(int a,int b){
+        a = rk[a] , b = rk[b];
+        if(a > b) swap(a , b);++a;
+        int t = Log[b-a+1];
+        return min(p[t][a] , p[t][b-(1<<t)+1]);
+    }
+};
+\end{lstlisting}
+\subsection{Exkmp}
+\begin{lstlisting}[language=C++]
+void exkmp(char *s,int *z,char *t,int *p){
+    int lens = strlen(s);
+    int lent = strlen(t);
+    p[0]=0;
+    for(int i=0,x=0,y=0;i<lens;++i){
+        if(i<=y) z[i] = min(y-i,p[i-x]);
+        while(i + z[i] < lens && z[i] < lent && s[i + z[i]] == t[z[i]]) ++z[i];
+        if(y <= i + z[i]) x = i, y = i + z[i];
+    }
+}
+
+void Exkmp(){
+    scanf("%s%s",s,t);
+    exkmp(t+1,nt+1,t,nt);
+    exkmp(s,ns,t,nt);
+}
+\end{lstlisting}
+\subsection{Kmp}
+\begin{lstlisting}[language=C++]
+void kmp(char *s,int *ns,char *t,int *nt){
+    int lens = strlen(s);
+    int lent = strlen(t);
+    nt[0] = -1;
+    for(int i=0,j=-1;i<lens;++i){
+        while(j >= 0 && s[i] != t[j + 1]) j = nt[j];
+        if(s[i] == t[j + 1]) ++j;
+        ns[i] = j;
+        if(j + 1 == lent) j = nt[j];
+    }
+}
+void KMP(){
+    scanf("%s%s",s,t);
+    kmp(t+1,nt+1,t,nt);
+    kmp(s,ns,t,nt);
+}
+\end{lstlisting}
+\subsection{Manacher}
+\begin{lstlisting}[language=C++]
+// length of pa is two size of str
+// pa[i<<1] : odd string
+// pa[i<<1|1] : even string
+void Manacher(char *s,int n,int *pa){
+    pa[0] = 1;
+    for(int i=1,j=0;i<(n<<1)-1;++i){
+        int p = i >> 1 , q = i - p , r = ((j + 1)>>1) + pa[j] - 1;
+        pa[i] = r < q ? 0 : min(r - q + 1 , pa[(j<<1) - i]);
+        while(0 <= p - pa[i] && q + pa[i] < n && s[p - pa[i]] == s[q + pa[i]])
+            pa[i]++;
+        if(q + pa[i] - 1 > r) j = i;
+    }
+}
+\end{lstlisting}
+\subsection{PalindromicTree}
+\begin{lstlisting}[language=C++]
+// [0,p) , 0(even) and 1(odd) is virtual , init!!
+struct Palindromic_Tree {
+    static const int N = 101010 , M = 26;
+    int ne[N][M] , fail[N] , len[N] , S[N] , last , n , p;
+    int newnode(int l){
+        fill(ne[p] , ne[p] + M , 0);
+        len[p] = l;
+        return p++;
+    }
+    void ini(){
+        p = 0;newnode(0);newnode(-1);
+        S[n = last = 0] = -1;
+        fail[0] = 1;
+    }
+    int get_fail(int x){
+        while(S[n - len[x] - 1] != S[n]) x = fail[x];
+        return x;
+    }
+    void add(int c){
+        S[++n] = c;
+        int cur = get_fail(last);
+        if(!ne[cur][c]){
+            int now = newnode(len[cur] + 2);
+            fail[now] = ne[get_fail(fail[cur])][c];
+            ne[cur][c] = now;
+        }
+        last = ne[cur][c];
+    }
+};
+\end{lstlisting}
+\subsection{SuffixAutomaton}
+\begin{lstlisting}[language=C++]
+// [0,L] , 0 is virtual , 1 is rt , init!!
+struct SAM{
+    static const int N = 101010 , M = 26;
+    int par[N] , l[N] , ne[N][M];
+    int rt , last , L;
+    void add(int c){
+        int p = last , np = ++L;
+        fill(ne[np] , ne[np] + M , 0);
+        l[np] = l[p] + 1;
+        last = np;
+        while(p && !ne[p][c]) ne[p][c] = np , p = par[p];
+        if(!p) par[np] = rt;
+        else{
+            int q = ne[p][c];
+            if(l[q] == l[p] + 1) par[np] = q;
+            else{
+                int nq = ++L;
+                l[nq] = l[p] + 1;
+                copy(ne[q] , ne[q] + M , ne[nq]);
+                par[nq] = par[q];
+                par[q] = par[np] = nq;
+                while(p && ne[p][c] == q) ne[p][c] = nq , p = par[p];
+            }
+        }
+    }
+    void ini(){
+        rt = last = L = 1;
+        fill(ne[rt] , ne[rt] + M , 0);
+        l[0] = -1;
+    }
+};
+\end{lstlisting}
+\subsection{SuffixTree}
+\begin{lstlisting}[language=C++]
+// init!! , go[0] is virtual , add 0 in the end of string
+const int N = 101010 , C = 27 , inf = ~0U>>1;
+int pos,S[N];
+struct SuffixTree{
+    struct Node{
+        int l , r , du;
+        Node *fail, *go[C], *fa;
+        Node(int l=-1,int r=inf) : l(l),r(r){
+            fail = fa = NULL; du = 0;
+            memset(go,0,sizeof(go));
+        }
+        Node* link(Node*t){int c=S[t->l];du+=!go[c];go[c]=t;t->fa=this;return t;}
+        int len(){return min(r,pos+1)-l;}
+    }pool[N<<2],*pl,*rt,*p,*pre;
+    int L,R;
+    ll size; queue<Node*> leaves;
+    void ini(){
+        pos=-1;
+        pl=pool;rt=p=new(pl++) Node(-1,-1);pre=NULL;
+        L=R=0;
+        size = 0; while(sz(leaves)) leaves.pop();
+    }
+    void jump(Node*u){
+        if(pre) pre->fail = u;
+        pre = u;
+    }
+    bool walk(Node*u){
+        int len=u->len();
+        if(R >= len) return L+=len,R-=len,p=u,true;
+        return false;
+    }
+    void extend(int c){
+        S[++pos] = c; pre = NULL;
+        for(;;){
+            int ch = S[L = R ? L : pos];
+            if(p->go[ch]){
+                Node*q = p->go[ch];
+                if(walk(q)) continue;
+                if(S[q->l + R] == c){ ++R; jump(p); break; }
+                Node *s = new(pl++) Node(q->l,q->l+R);
+                leaves.push(s->link(new(pl++) Node(pos)));
+                q->l += R; p->link(s)->link(q);
+                jump(s);
+            }
+            else leaves.push(p->link(new(pl++) Node(pos))) , jump(p);
+            if(p == rt && !R) break;
+            else if(p == rt) L = pos - --R;
+            else p = p->fail ? p->fail : rt;
+        }
+        size += sz(leaves);
+    }
+    void eraseUp(Node*&u){
+        size -= u->len();
+        u->fa->go[S[u->l]] = NULL;
+        --((u=u->fa)->du);
+    }
+    void erase(){
+        Node*u = leaves.front(); leaves.pop();
+        while(!u->du && u != p) eraseUp(u);
+        if(u == p){
+            if(!p->du && !R){
+                L = pos - (R = p->len()) + 1;
+                p = p->fa; eraseUp(u);
+            }
+            if(R && !p->go[S[L]]){
+                Node *leaf = new(pl++) Node(L);
+                leaves.push(p->link(leaf));
+                size += leaf->len();
+                if(p == rt && R) L = pos - --R + 1;
+                else p = p->fail ? p->fail : rt;
+            }
+        }
+    }
+    int stop , ord[N<<1] , rk[N];
+    void dfs(Node*u){
+        ord[u - pool] = stop++;
+        rep(i,0,C) if(u->go[i]) dfs(u->go[i]);
+    }
+    void getrk(){
+        stop = 0;
+        dfs(rt);
+        for(int i=0;sz(leaves);++i)
+            rk[i] = ord[leaves.front() - pool] , leaves.pop();
+    }
+};
+\end{lstlisting}
+
+\section{Tree}
+\subsection{Centroid}
+\begin{lstlisting}[language=C++]
+// id starts from 1
+namespace Centriod {
+    const int N = 101010;
+    int vis[N],sz[N];
+    void dfssz(int c,int fa,int Sz,int &rt){
+        sz[c] = 1;
+        for(auto t : g[c]) if(!vis[t]&&t!=fa) dfssz(t,c,Sz,rt) , sz[c]+=sz[t];
+        if(!rt && sz[c]*2>Sz) rt=c;
+    }
+    void dfs(int c){
+        int rt=0;dfssz(c,0,0,rt);dfssz(c,0,sz[c],rt=0);
+        // cal something
+        vis[rt] = true;
+        for(auto t : g[rt]) if(!vis[t]) dfs(t);
+    }
+};
+\end{lstlisting}
+\subsection{HeavyChain}
+\begin{lstlisting}[language=C++]
+// id starts with 1
+struct HeavyChain{
+    static const int N = 100005 , inf = ~0U>>1;
+    int sz[N] , wson[N] , top[N] , dep[N] , id[N] , _ , par[N] , who[N];
+    void dfs(int c,int fa,vi g[]){
+        sz[c]=1;dep[c]=dep[par[c]=fa]+1;int &s=wson[c]=top[c]=0;
+        for(auto t:g[c]) if(t!=fa)
+            dfs(t,c,g),sz[c]+=sz[t],(sz[t]>=sz[s])&&(s=t);
+    }
+    void dfs2(int c,int fa,vi g[]){
+        who[id[c]=++_]=c;int s=wson[c];
+        if(!top[c]) top[c]=c;
+        if(s) top[s]=top[c],dfs2(s,c,g);
+        for(auto t:g[c]) if(t!=fa&&t!=s) dfs2(t,c,g);
+    }
+    void Query(int a,int b){// info in points
+        int fa=top[a],fb=top[b];
+        while(fa!=fb){
+            if(dep[fa]<dep[fb]) swap(a,b) , swap(fa,fb);
+            // Cal id[fa] .. id[a]
+            a = par[fa];fa = top[a];
+        }
+        if(dep[a]<dep[b]) swap(a,b);
+        // Cal id[b] .. id[a]
+    }
+    void Build(vi g[]){
+        dfs(1,0,g);_=0;dfs2(1,0,g);
+    }
+}hc;
+\end{lstlisting}
+\subsection{LCARMQ}
+\begin{lstlisting}[language=C++]
+// N is 2 size of tree , id of nodes start from 0
+struct LCARMQ{
+    static const int N = 101010 << 1;
+    int a[20][N] , lft[N] , dep[N] , lg[N] , L;
+    int rmin(int x,int y){return dep[x] < dep[y] ? x : y;}
+    void add(int x){ a[0][L++] = x;}
+    void dfs(int c,int fa,const vi g[]){
+        lft[c]=L;add(c);
+        for(auto t : g[c]) if(t!=fa) dep[t]=dep[c]+1,dfs(t,c,g),add(c);
+    }
+    void Build(const vi g[]){
+        L = 0;dfs(0,-1,g);
+        rep(i,2,L) lg[i]=lg[i-1]+(i==(i&-i));
+        rep(i,1,20){
+            int lim = L+1-(1<<i);
+            rep(j,0,lim) a[i][j] = rmin(a[i-1][j] , a[i-1][j+(1<<i>>1)]);
+        }
+    }
+    int lca(int x,int y){
+        x = lft[x] , y = lft[y];
+        if(x > y) swap(x , y);
+        int i = lg[y-x+1];
+        return rmin(a[i][x] , a[i][y+1-(1<<i)]);
+    }
+};
+\end{lstlisting}
+\subsection{VTree}
+\begin{lstlisting}[language=C++]
+namespace Vtree{// some nodes remain
+    const int N = 101010;
+    int tp[N] , _;
+    vi g[N];// nodes sorted in dfs order
+    void solve(vi&v,LCARMQ&R){
+        _ = 0;
+        vi del;del.pb(tp[_++] = v[0]);
+        rep(i,1,sz(v)){
+            int lca = R.lca(tp[_-1] , v[i]);
+            vi l;while(_ > 0 && R.dep[lca] < R.dep[tp[_-1]]) l.pb(tp[--_]);
+            if(_ == 0 || lca != tp[_-1]) del.pb(tp[_++] = lca);
+            l.pb(tp[_-1]);del.pb(tp[_++] = v[i]);
+            rep(i,1,sz(l)) g[l[i]].pb(l[i-1]);
+        }
+        rep(i,0,_-1) g[tp[i]].pb(tp[i+1]);
+        // dfs()
+        for(auto t : del){
+            // Cal()
+            g[t].clear();
+        }
+    }
+}
+\end{lstlisting}
+
+\section{ZProblems}
+\subsection{Expression}
+\begin{lstlisting}[language=C++]
+char s[U<<2];
+int len;
+int a[U];
+bool Q[6][6] = {
+    0,0,0,0,0,0,
+    1,1,0,0,0,0,
+    1,1,1,0,0,0,
+    1,1,1,0,0,0,
+    1,1,1,1,0,0,
+    0,0,0,0,0,0,
+};
+
+int id(char c){
+    if(c == '~') return 0;
+    if(c == '&') return 1;
+    if(c == '|') return 2;
+    if(c == '>') return 3;
+    if(c == '=') return 4;
+    // '('
+    return 5;
+}
+
+int num[1010] , op[1010];
+int ntop , otop;
+
+void pop(){
+    int c = op[otop--];
+    int t1,t2;
+    if(c == '~'){
+        t1 = num[ntop];
+        num[ntop] = imp[t1][1];
+    }
+    else if(c == '&'){
+        t1 = num[ntop] , t2 = num[ntop-1];
+        num[--ntop] = con[t2][t1];
+    }
+    else if(c == '|'){
+        t1 = num[ntop] , t2 = num[ntop-1];
+        num[--ntop] = dis[t2][t1];
+    }
+    else if(c == '>'){
+        t1 = num[ntop] , t2 = num[ntop-1];
+        num[--ntop] = imp[t2][t1];
+    }
+    else if(c == '='){
+        int fr = ntop-1;
+        while(otop != -1 && op[otop] == '=') fr-- , otop--;
+        int k = -1,x,y,cal;
+        for(int i=fr;i<ntop;++i){
+            x = num[i] , y = num[i+1];
+            cal = con[imp[x][y]][imp[y][x]];
+            if(k == -1) k = cal;
+            else k = con[k][cal];
+        }
+        num[ntop = fr] = k;
+    }
+}
+
+bool ok(){
+    ntop = otop = -1;
+    rep(i,0,len){
+        int c = s[i];
+        if(c == ' ') continue;
+        else if(isupper(c)) num[++ntop] = a[c-'A'];
+        else if(isdigit(c)) num[++ntop] = c=='0';
+        else if(c == ')'){
+            while(op[otop] != '(') pop();
+            otop--;
+        }
+        else{
+            while(otop != -1 && Q[id(c)][id(op[otop])]) pop();
+            op[++otop] = c;
+        }
+    }
+    while(otop != -1) pop();
+    return num[0] == 0;
+}
+\end{lstlisting}
+\subsection{Geo}
+\begin{lstlisting}[language=C++]
+#include <iostream>
+#include <vector>
+#include <complex>
+using namespace std;
+#define rep(i,a,b) for(int i=a;i<b;++i)
+#define sz(x) (int)(x).size()
+namespace Geo{
+    typedef double T;
+    typedef complex<T> P;
+    T dot(P a,P b){return (conj(a)*b).real();}
+    T cross(P a,P b){return (conj(a)*b).imag();}
+    T disq(P a,P b){return norm(a-b);}
+    // able with integer above
+    T dis(P a,P b){return abs(a-b);}
+    T angle(P a,P b){return arg(b-a);}
+    T angle(P a,P o,P b){return abs(remainder(arg(a-o)-arg(b-o),2.*M_PI));}
+    P rot(P a,T theta){return a*polar(1.,theta);}
+    P rot(P a,P o,T theta){return (a-o)*polar(1.,theta)+o;}
+    P proj(P p,P v){return v*dot(p,v)/norm(v);}
+    P proj(P p,P a,P b){return (b-a)*dot(p-a,b-a)/norm(b-a)+a;}
+    P reflect(P p,P a,P b){return conj((p-a)/(b-a))*(b-a)+a;}
+    P intersection(P a,P b,P p,P q){T c1=cross(p-a,b-a),c2=cross(q-a,b-a);
+        return (c1*q-c2*p)/(c1-c2);}
+}
+using namespace Geo;
+namespace NearestPoints{
+    T Min;P tmp[100000];
+    void Update(T disq) {Min = min(Min , disq);}
+    T solve(int l,int r,P*p){
+        if(l >= r) return 1e100;
+        if(l + 1 == r){
+            if(p[l].imag() > p[r].imag()) swap(p[l],p[r]);
+            Update(disq(p[l],p[r]));
+            return disq(p[l],p[r]);
+        }
+        int m=(l+r)>>1;
+        T Xm = p[m].real() , lim = min(solve(l,m,p) , solve(m+1,r,p));
+        int i=l,j=m+1,ii=m,jj=r,k=l;
+        while(i<=ii&&j<=jj){
+            while(i<=ii&&(j>jj||p[i].imag() <= p[j].imag())) tmp[k++] = p[i++];
+            swap(i,j);swap(ii,jj);
+        }
+        vector<P> V;
+        rep(i,l,r+1){
+            p[i] = tmp[i];
+            if(fabs(p[i].real() - Xm) <= lim) V.push_back(p[i]);
+        }
+        rep(i,0,sz(V)) rep(j,i+1,sz(V)){
+            if(fabs(V[j].imag() - V[i].imag()) >= lim) break;
+            T _dis = disq(V[i] , V[j]);
+            Update(_dis);lim = min(lim,_dis);
+        }
+        return lim;
+    }
+    void ini(){Min = 1e100;}
+}
+
+int main(){
+    return 0;
+}
+\end{lstlisting}
+\subsection{PlugDP}
+\begin{lstlisting}[language=C++]
+/* 插头dp */
+// 多回路
+int g[12][12];
+ll dp[12][12][1<<12];
+
+#define b2(x) (1<<(x))
+ll work(){
+    scanf("%d%d",&n,&m);
+    rep(i,1,n+1) rep(j,1,m+1) scanf("%d",&g[i][j]);
+    rep(i,0,b2(m+1)) dp[0][m][i] = 0;
+    dp[0][m][0] = 1;
+    rep(i,1,n+1){
+        rep(s,0,b2(m)) dp[i][0][s<<1] = dp[i-1][m][s];
+        rep(j,1,m+1) rep(s,0,b2(m+1)){
+            int p = 1<<j-1 , q = 1<<j;
+            bool x = p&s , y = q&s;
+            if(g[i][j]){
+                dp[i][j][s] = dp[i][j-1][s^p^q];
+                if(x^y) dp[i][j][s] += dp[i][j-1][s];
+            }
+            else{
+                if(!(x||y)) dp[i][j][s] = dp[i][j-1][s];
+                else dp[i][j][s] = 0;
+            }
+        }
+    }
+    return dp[n][m][0];
+}
+
+int main(){
+    scanf("%d",&T);
+    rep(i,1,T+1) printf("Case %d: There are %I64d ways to eat the trees.\n",i,work());
+    return 0;
+}
+//	单回路
+int n , m , end_n , end_m;
+int g[15][15];
+const int HASH = (1<<14) - 1 , NODE = 243 * 243 * 3;
+int h[HASH + 1];
+struct hashmap{
+    int ne[NODE] , s[NODE] , e;
+    ll sum[NODE];
+    void ins(int p,ll d){
+        int c = p&HASH;
+        for(int k=h[c];~k;k=ne[k])
+            if(s[k] == p){
+                sum[k] += d;
+                return;
+            }
+        s[e] = p , sum[e] = d;
+        ne[e] = h[c];h[c] = e++;
+    }
+    void ini(){
+        set(h,-1);
+        e = 0;
+    }
+}hm[2];
+int c;
+
+ll work(){
+    char s[20];
+    rep(i,1,n+1){
+        scanf("%s",s+1);
+        rep(j,1,m+1) if(g[i][j] = s[j] == '.') end_n = i , end_m = j;
+    }
+    int t2[20];
+    rep(i,0,20) t2[i] = i+i;
+    c = 0;hm[c].ini();hm[c].ins(0,1);
+    rep(i,1,n+1){
+        rep(k,0,hm[c].e) hm[c].s[k] <<= 2;
+        rep(j,1,m+1){
+            c ^= 1;
+            hm[c].ini();
+            rep(k,0,hm[c^1].e){
+                int s = hm[c^1].s[k];
+                ll sum = hm[c^1].sum[k];
+                if(s>>t2[m+1]) continue;
+                int p = (s>>t2[j-1]) & 3 , q = (s>>t2[j]) & 3;
+                if(g[i][j] == 0){
+                    if(p == 0 && q == 0) hm[c].ins( s , sum );
+                }
+                else{
+                    if(p == 0 && q == 0){
+                        hm[c].ins( s ^ (1<<t2[j-1]) ^ (2<<t2[j]) , sum);
+                    }
+                    else if(p == 0 || q == 0){
+                        hm[c].ins( s , sum );
+                        hm[c].ins( s ^ ((p|q)<<t2[j-1]) ^ ((p|q)<<t2[j]) , sum );
+                    }
+                    else if(p == q){
+                        int cnt = 1;
+                        for(int k = p == 1 ?j+1:j-2;;p == 1 ?++k:--k){
+                            int t = s>>t2[k]&3;
+                            if(t == p) ++cnt;
+                            if(t == (p^3)) --cnt;
+                            if(cnt == 0){
+                                hm[c].ins( s ^ (3<<t2[k]) ^ (p<<t2[j]) ^ (p<<t2[j-1]) , sum );
+                                break;
+                            }
+                        }
+                    }
+                    else if(p == 1 && q == 2){
+                        if(i == end_n && j == end_m)
+                            hm[c].ins( s ^ (1<<t2[j-1]) ^ (2<<t2[j]) , sum);
+                    }
+                    else if(p == 2 && q == 1){
+                        hm[c].ins( s ^ (2<<t2[j-1]) ^ (1<<t2[j]) , sum );
+                    }
+                }
+            }
+        }
+    }
+    rep(i,0,hm[c].e) if(hm[c].s[i] == 0) return hm[c].sum[i];
+    return 0;
+}
+
+int main(){
+    while(~scanf("%d%d",&n,&m)) printf("%I64d\n",work());
+    return 0;
+}
+//	O->必选 X->障碍 *->可选
+const int N = 20202<<1 , M = N << 1;
+int T , n , m , end_n , end_m;
+const int HASH = (1<<18)-1 , NODE = 243 * 243 * 3;
+int h[HASH];
+struct hashmap{
+    int ne[NODE] , s[NODE] , e;
+    ll sum[NODE];
+    void ins(int val,ll d){
+        int c = val & HASH;
+        for(int k=h[c];~k;k=ne[k])
+            if(s[k] == val){
+                sum[k] += d;
+                return;
+            }
+        s[e] = val , sum[e] = d;
+        ne[e] = h[c];h[c] = e++;
+    }
+    void ini(){
+        set(h,-1);
+        e = 0;
+    }
+}hm[2];
+char g[15][15];
+int c;
+
+ll work(){
+    scanf("%d%d",&n,&m);
+    rep(i,1,n+1){
+        scanf("%s",g[i]+1);
+        rep(j,1,m+1) if(g[i][j] == 'O')
+            end_n = i , end_m = j;
+    }
+    ll ans = 0;
+    bool lst = false;
+    hm[c].ini();hm[c].ins(0,1);
+    int t2[20];
+    rep(i,0,20) t2[i] = i+i;
+    rep(i,1,n+1){
+        rep(k,0,hm[c].e) hm[c].s[k] <<= 2;
+        rep(j,1,m+1){
+            if(i == end_n && j == end_m) lst = true;
+            c ^= 1;
+            hm[c].ini();
+            rep(k,0,hm[c^1].e){
+                int s = hm[c^1].s[k];
+                ll sum = hm[c^1].sum[k];
+                if(s>>t2[m+1]) continue;
+                int p = s>>t2[j-1]&3 , q = s>>t2[j]&3;
+                if(g[i][j] == 'X'){
+                    if(p == 0 && q == 0) hm[c].ins(s , sum);
+                }
+                else if(p == 0 && q == 0) hm[c].ins(s ^ 1<<t2[j-1] ^ 2<<t2[j] , sum);
+                else if(p == 0 || q == 0) hm[c].ins(s , sum) , hm[c].ins(s ^ (p|q)<<t2[j-1] ^ (p|q)<<t2[j] , sum);
+                else if(p == q){
+                    int cnt = 1;
+                    for(int k = p==1 ? j+1:j-2;;p==1?++k:--k){
+                        int t = s>>t2[k]&3;
+                        if(t == p) ++cnt;
+                        if(t == (p^3)) --cnt;
+                        if(cnt == 0){
+                            hm[c].ins(s ^ 3<<t2[k] ^ p<<t2[j-1] ^ p<<t2[j] , sum);
+                            break;
+                        }
+                    }
+                }
+                else if(p == 2 && q == 1) hm[c].ins(s ^ p<<t2[j-1] ^ q<<t2[j] , sum);
+                else if(p == 1 && q == 2){
+                    if(lst) if((s ^ p<<t2[j-1] ^ q<<t2[j]) == 0)
+                        ans += sum;
+                }
+                if(g[i][j] == '*') if(p == 0 && q == 0) hm[c].ins(s , sum);
+            }
+        }
+    }
+    return ans;
+}
+
+int main(){
+    scanf("%d",&T);
+    rep(i,1,T+1) printf("Case %d: %I64d\n",i,work());
+    return 0;
+}
+//	最小花费回路
+const int N = 20202<<1 , M = N << 1;
+const int HASH = 10007 , NODE = 243 * 243 * 3;
+int h[HASH];
+struct hashmap{
+    int ne[NODE] , s[NODE] , e;
+    int mi[NODE];
+    void ins(int val,int t){
+        int c = val % HASH;
+        for(int k=h[c];~k;k=ne[k])
+            if(s[k] == val){
+                mi[k] = min(mi[k] , t);
+                return;
+            }
+        s[e] = val , mi[e] = t;
+        ne[e] = h[c];h[c] = e++;
+    }
+    void ini(){
+        set(h,-1);
+        e = 0;
+    }
+}hm[2];
+int c;
+char g[30][30];
+int T , n , m;
+
+int work(){
+    scanf("%d%d",&n,&m);
+    gets(g[0]);
+    rep(i,1,2*n+2) gets(g[i] + 1);
+    int w2[20];
+    rep(i,0,20) w2[i] = i+i;
+    hm[c].ini();hm[c].ins(0,0);
+    rep(i,1,n+1){
+        rep(k,0,hm[c].e) hm[c].s[k] <<= 2;
+        rep(j,1,m+1){
+            c ^= 1;
+            hm[c].ini();
+            rep(k,0,hm[c^1].e){
+                int s = hm[c^1].s[k];
+                int d = hm[c^1].mi[k];
+                if(s>>w2[m+1]) continue;
+                int p = s>>w2[j-1]&3 , q = s>>w2[j]&3;
+                int up = g[i*2-1][j*2] - '0', left = g[i*2][j*2-1] - '0';
+                if(p == 0 && q == 0) hm[c].ins(s ^ 1<<w2[j-1] ^ 2<<w2[j] , d);
+                else if(p == 0 || q == 0) hm[c].ins(s , d + (p ? left : up)) ,
+                    hm[c].ins(s ^ (p|q)<<w2[j-1] ^ (p|q)<<w2[j], d + (p ? left : up));
+                else if(p == q){
+                    int cnt = 1;
+                    for(int k=p==1?j+1:j-2;;p==1?++k:--k){
+                        int t = s>>w2[k]&3;
+                        if(t == p) ++cnt;
+                        if(t == (p^3)) --cnt;
+                        if(cnt == 0){
+                            hm[c].ins(s ^ 3<<w2[k] ^ p<<w2[j-1] ^ q<<w2[j] , d + left + up);
+                            break;
+                        }
+                    }
+                }
+                else if(p == 2 && q == 1) hm[c].ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d + left + up);
+                else if(p == 1 && q == 2) if(i == n && j == m) hm[c].ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d + left + up);
+            }
+        }
+    }
+    rep(i,0,hm[c].e) if(hm[c].s[i] == 0) return hm[c].mi[i];
+    return 0;
+}
+
+int main(){
+    scanf("%d",&T);
+    rep(i,1,T+1) printf("%d\n",work());
+    return 0;
+}
+//	左上到右下简单路径
+const int N = 20202<<1 , M = N << 1;
+const int HASH = 10007 , NODE = 243 * 243 * 3;
+int h[HASH];
+struct hashmap{
+    int ne[NODE] , s[NODE] , e;
+    int mi[NODE];
+    void ins(int val,int t){
+        int c = val % HASH;
+        for(int k=h[c];~k;k=ne[k])
+            if(s[k] == val){
+                mi[k] = max(mi[k] , t);
+                return;
+            }
+        s[e] = val , mi[e] = t;
+        ne[e] = h[c];h[c] = e++;
+    }
+    void ini(){
+        set(h,-1);
+        e = 0;
+    }
+}hm[2];
+int c;
+int g[15][15];
+bool can[15][15];
+int T , n , m;
+
+int work(){
+    n += 2 , m += 2;
+    set(g,0);set(can,true);
+    rep(j,2,m) can[2][j] = false;
+    rep(i,2,n) can[i][m-1] = false;
+    rep(i,3,n+1) rep(j,1,m-1) scanf("%d",&g[i][j]);
+    hm[c].ini(); hm[c].ins(0,0);
+    int w2[20]; rep(i,0,20) w2[i] = i+i;
+    rep(i,1,n+1){
+        rep(k,0,hm[c].e) hm[c].s[k] <<= 2;
+        rep(j,1,m+1){
+            c ^= 1;
+            hm[c].ini();
+            rep(k,0,hm[c^1].e){
+                int s = hm[c^1].s[k];
+                int d = hm[c^1].mi[k];
+                if(s>>w2[m+1]) continue;
+                int p = s>>w2[j-1]&3 , q = s>>w2[j]&3;
+                if(can[i][j] == 0){
+                    if(p == 0 && q == 0)
+                        hm[c].ins(s , d);
+                }
+                else if(p == 0 && q == 0){
+                    if(i != 1 || j != 1) hm[c].ins(s , d);
+                    hm[c].ins(s ^ 1<<w2[j-1] ^ 2<<w2[j] , d + g[i][j]);
+                }
+                else if(p == 0 || q == 0) hm[c].ins(s , d + g[i][j]) ,
+                    hm[c].ins(s ^ (p|q)<<w2[j-1] ^ (p|q)<<w2[j] , d + g[i][j]);
+                else if(p == q){
+                    for(int cnt=1,k=p==1?j+1:j-2;;p==1?++k:--k){
+                        int t = s>>w2[k]&3;
+                        if(t == p) ++cnt;
+                        if(t == (p^3)) --cnt;
+                        if(cnt == 0){
+                            hm[c].ins(s ^ 3<<w2[k] ^ p<<w2[j-1] ^ q<<w2[j] , d + g[i][j]);
+                            break;
+                        }
+                    }
+                }
+                else if(p == 2 && q == 1) hm[c].ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d + g[i][j]);
+                else if(p == 1 && q == 2) if(i == n && j == m) hm[c].ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d + g[i][j]);
+            }
+        }
+    }
+    rep(i,0,hm[c].e) if(hm[c].s[i] == 0) return hm[c].mi[i];
+    return 0;
+}
+
+int main(){
+    int _ = 0;
+    while(~scanf("%d%d",&n,&m)) printf("Case %d: %d\n",++_,work());
+    return 0;
+}
+//	0->空 1->障碍 把22,33不相交连起来最短
+const int N = 20202<<1 , M = N << 1;
+const int HASH = 10007 , NODE = 243 * 243 * 3;
+int n , m , en , em;
+int g[15][15];
+int h[HASH];
+struct hashmap{
+    int mi[NODE] , ne[NODE] , e;
+    int s[NODE];
+    void ins(int x,int d){
+        int c = x % HASH;
+        for(int k=h[c];~k;k=ne[k])
+            if(s[k] == x){
+                mi[k] = min(mi[k] , d);
+                return;
+            }
+        s[e] = x , mi[e] = d;
+        ne[e] = h[c] ; h[c] = e++;
+    }
+    void ini(){
+        set(h,-1);
+        e = 0;
+    }
+}hm[2];
+int c;
+
+int work(){
+    rep(i,1,n+1) rep(j,1,m+1){
+        scanf("%d",&g[i][j]);
+        if(g[i][j] >= 2) en = i , em = j;
+    }
+    hm[c].ini();hm[c].ins(0,0);
+    int e3[20];
+    rep(i,0,20) e3[i] = i+i+i;
+    int ans = inf;
+    rep(i,1,n+1){
+        rep(k,0,hm[c].e){
+            if(hm[c].s[k]>>e3[m]) hm[c].mi[k] = -1;
+            else hm[c].s[k] <<= 3;
+        }
+        rep(j,1,m+1){
+            c ^= 1;
+            hm[c].ini();
+            rep(k,0,hm[c^1].e){
+                int s = hm[c^1].s[k];
+                int d = hm[c^1].mi[k];
+                if(s>>e3[m+1] || d < 0 || d >= ans) continue;
+                if(s == 0 && (i >= en && j >= em || i > en))
+                    ans = min(ans , d);
+                int p = s>>e3[j-1]&7 , q = s>>e3[j]&7;
+                if(g[i][j] == 1){
+                    if(p == 0 && q == 0)
+                        hm[c].ins(s , d);
+                }
+                else if(g[i][j] == 0){
+                    if(p == 0 && q == 0) hm[c].ins(s , d) ,
+                        hm[c].ins(s ^ 1<<e3[j-1] ^ 2<<e3[j] , d + 1);
+                    else if(p == 0 || q == 0) hm[c].ins(s , d + 1) ,
+                        hm[c].ins(s ^ (p|q)<<e3[j-1] ^ (p|q)<<e3[j] , d + 1);
+                    else if(p == 2 && q == 1 || p == q && p >= 3)
+                        hm[c].ins(s ^ p<<e3[j-1] ^ q<<e3[j] , d + 1);
+                    else if(p == 1 && q == 2) continue;
+                    else if(min(p,q) <= 2){
+                        int a = min(p,q) , b = p^q^a;
+                        for(int cnt=1,k=a==1?j+1:j-2;;a==1?++k:--k){
+                            int t = s>>e3[k]&7;
+                            if(t == a) ++cnt;
+                            if(t == (3^a)) --cnt;
+                            if(cnt == 0){
+                                hm[c].ins(s ^ (3^a^b)<<e3[k] ^ p<<e3[j-1] ^ q<<e3[j] , d + 1);
+                                break;
+                            }
+                        }
+                    }
+                }
+                else if(g[i][j] >= 2){
+                    int o = g[i][j] + 1;
+                    if(p == 0 && q == 0) hm[c].ins(s ^ o<<e3[j-1], d + 1) ,
+                        hm[c].ins(s ^ o<<e3[j] , d + 1);
+                    else if(p == 0 || q == 0){
+                        if(max(p,q) == o) hm[c].ins(s ^ p<<e3[j-1] ^ q<<e3[j] , d + 1);
+                        else if(max(p,q) <= 2){
+                            int a = max(p,q) , b = o;
+                            for(int cnt=1,k=a==1?j+1:j-2;;a==1?++k:--k){
+                                int t = s>>e3[k]&7;
+                                if(t == a) ++cnt;
+                                if(t == (3^a)) --cnt;
+                                if(cnt == 0){
+                                    hm[c].ins(s ^ (3^a^b)<<e3[k] ^ p<<e3[j-1] ^ q<<e3[j] , d + 1);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    rep(i,0,hm[c].e) if(hm[c].s[i] == 0){
+        ans = min(hm[c].mi[i] , ans);
+        break;
+    }
+    return ans == inf ? 0 : ans-2;
+}
+
+
+int main(){
+    while(~scanf("%d%d",&n,&m)){
+        if(!(n||m)) break;
+        printf("%d\n",work());
+    }
+    return 0;
+}
+//	六边形多回路
+const int N = 1<<17;
+struct hashmap{
+    ll sum[N];
+    int q[N],e;
+    void ins(int x,ll d){
+        if(sum[x] == 0) q[e++] = x;
+        sum[x] += d;
+    }
+    void ini(){
+        rep(i,0,e) sum[q[i]] = 0;
+        e = 0;
+    }
+}hm[2];int c;
+int COL = 8;
+int n , m;
+int g[15][15];
+
+void Trans(int y,bool f){
+    c ^= 1;
+    hm[c].ini();
+    rep(k,0,hm[c^1].e){
+        int s = hm[c^1].q[k] , ns=s;
+        ll d = hm[c^1].sum[s];
+        if(d == 0) continue;
+
+        int cnt = 0;
+        rep(j,0,3) if(s>>(y+y-j)&1) ns ^= 1<<(y+y-j) , ++cnt;
+        if(f){
+            if(cnt == 0) hm[c].ins(s , d);
+        }
+        else{
+            if(cnt == 0) rep(i,0,2) rep(j,i+1,3) hm[c].ins(ns ^ 1<<(y+y-i) ^ 1<<(y+y-j) , d);
+            if(cnt == 1) rep(i,0,3) hm[c].ins(ns ^ 1<<(y+y-i) , d);
+            if(cnt == 2) hm[c].ins(ns , d);
+        }
+    }
+}
+
+ll work(){
+    set(g,0);
+    rep(i,0,m){
+        char s[3];
+        scanf("%s",s);
+        g[s[0] - 'A' + 1][s[1] - 'A' + 1] = 1;
+    }
+    hm[c].ini();hm[c].ins(0,1);
+    rep(i,1,n+1){
+        rep(k,0,hm[c].e){
+            int s = hm[c].q[k];
+            if((s&1) || (s>>(COL+COL))) hm[c].sum[s] = 0;
+        }
+        for(int j=2;j<=COL;j+=2) Trans(j,g[i][j]);
+        for(int j=1;j<=COL;j+=2) Trans(j,g[i][j]);
+    }
+    rep(i,0,hm[c].e) if(hm[c].q[i] == 0) return hm[c].sum[0];
+    return 0;
+}
+
+int main(){
+    while(~scanf("%d%d",&n,&m)) printf("%lld\n",work());
+    return 0;
+}
+//	左上到左下,矩阵加速
+const int N = 1<<16;
+int v[N] , q[N] , _;
+int w2[30];
+int n , m;
+struct hashmap{
+    int v[N] , q[N] , e;
+    void ins(int x,int d){
+        if(v[x] == 0) q[e++] = x;
+        v[x] += d;
+    }
+    void ini(){
+        rep(i,0,e) v[q[i]] = 0;
+        e = 0;
+    }
+}hm[2];int c;
+struct MM{
+    ll a[120][120];
+    MM(ll x = 0){
+        rep(i,0,_) rep(j,0,_) a[i][j] = i == j ? x : 0;
+    }
+    MM operator * (const MM& b){
+        MM ret(0);
+        rep(i,0,_) rep(j,0,_) rep(k,0,_) ret.a[i][j] += a[i][k] * b.a[k][j];
+        rep(i,0,_) rep(j,0,_) ret.a[i][j] %= mod;
+        return ret;
+    }
+    MM operator ^ (int r){
+        MM ret(1) , sp = *this;
+        while(r){
+            if(r&1) ret = ret * sp;
+            sp = sp * sp;
+            r>>=1;
+        }
+        return ret;
+    }
+    void out(){
+        rep(i,0,_) rep(j,0,_) printf("%I64d%c",a[i][j]," \n"[j==_-1]);
+    }
+}mm;
+
+void Trans(int j,bool f){
+    c ^= 1;
+    hm[c].ini();
+    rep(k,0,hm[c^1].e){
+        int s = hm[c^1].q[k];
+        int d = hm[c^1].v[s];
+        int p = s>>w2[j-1]&3 , q = s>>w2[j]&3;
+        if(p == 0 && q == 0) hm[c].ins(s ^ 1<<w2[j-1] ^ 2<<w2[j] , d);
+        else if(p == 0 || q == 0) hm[c].ins(s , d) ,
+            hm[c].ins(s ^ (p|q)<<w2[j-1] ^ (p|q)<<w2[j] , d);
+        else if(p == 2 && q == 1) hm[c].ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d);
+        else if(p == 1 && q == 2 && f) hm[c].ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d);
+        else if(p == q){
+            for(int cnt=1,k=p==1?j+1:j-2;;p==1?++k:--k){
+                int t = s>>w2[k]&3;
+                if(t == p) ++cnt;
+                if(t == (p^3)) --cnt;
+                if(cnt == 0){
+                    hm[c].ins(s ^ 3<<w2[k] ^ p<<w2[j-1] ^ q<<w2[j], d);
+                    break;
+                }
+            }
+        }
+    }
+}
+void dfs(int fr){
+    hm[c].ini();hm[c].ins(fr,1);
+    rep(j,1,m+1) Trans(j,0);
+    rep(i,0,hm[c].e){
+        int s = hm[c].q[i];
+        int d = hm[c].v[s];
+        if(s>>w2[m]) continue;
+        s <<= 2;
+        if(v[s] == -1) v[s] = _ , q[_++] = s;
+        mm.a[v[fr]][v[s]] = d;
+    }
+}
+
+void work(){
+    if((n&1) && !(m&1)){
+        puts("Impossible");
+        return;
+    }
+    swap(n,m);
+    rep(i,0,30) w2[i] = i+i;
+    set(v,-1); _ = 0; v[1<<w2[1] ^ 2<<w2[m]] = 0;
+    q[_++] = 1<<w2[1] ^ 2<<w2[m];
+    set(mm.a,0);
+    rep(i,0,_) dfs(q[i]);
+    mm = mm ^ (n-1);
+    hm[c].ini();
+    rep(i,0,_) if(mm.a[0][i]) hm[c].ins(q[i] , mm.a[0][i]);
+    rep(i,1,m) Trans(i,0);
+    Trans(m,1);
+    rep(i,0,hm[c].e) if(hm[c].q[i] == 0){
+        printf("%d\n",hm[c].v[0] % mod);
+        return;
+    }
+    printf("%d\n",0);
+}
+
+int main(){
+    while(~scanf("%d%d",&n,&m)) work();
+    return 0;
+}
+//	最大路径
+const int N = 1<<18;
+struct hashmap{
+    int v[N] , q[N] , e;
+    void ins(int x,int d){
+        if(v[x] == -1) q[e++] = x;
+        v[x] = max(v[x],d);
+    }
+    void ini(){
+        rep(i,0,e) v[q[i]] = -1;
+        e = 0;
+    }
+}hm[2];int c;
+int T , n , m;
+int g[10][10] , w2[30];
+int ans;
+inline void ins(int x,int y){
+    hm[c].ins(x,y);
+}
+
+void Trans(int j,int dd){
+    c ^= 1;
+    hm[c].ini();
+    rep(k,0,hm[c^1].e){
+        int s = hm[c^1].q[k];
+        int d = hm[c^1].v[s];
+        int p = s>>w2[j-1]&3 , q = s>>w2[j]&3;
+        if(dd == 0){
+            if(p == 0 && q == 0) ins(s , d);
+            continue;
+        }
+        if(p == 0 && q == 0) ins(s , d) ,
+            ins(s ^ 1<<w2[j-1] ^ 2<<w2[j] , d + dd) ,
+                ins(s ^ 3<<w2[j-1] , d + dd) ,
+                ins(s ^ 3<<w2[j] , d + dd);
+        else if(p == 0 || q == 0){
+            ins(s , d + dd) ,
+                ins(s ^ (p|q)<<w2[j-1] ^ (p|q)<<w2[j] , d + dd);
+            int a = max(p,q);
+            if(a == 3){
+                if(!(s ^ p<<w2[j-1] ^ q<<w2[j])) ans = max(ans , d + dd);
+            }
+            else{
+                for(int cnt=1,k=a==1?j+1:j-2;;a==1?++k:--k){
+                    int t = s>>w2[k]&3;
+                    if(t == a) ++cnt;
+                    if(t == (a^3)) --cnt;
+                    if(cnt == 0){
+                        ins(s ^ a<<w2[k] ^ p<<w2[j-1] ^ q<<w2[j] , d + dd);
+                        break;
+                    }
+                }
+            }
+        }
+        else if(p == 2 && q == 1) ins(s ^ p<<w2[j-1] ^ q<<w2[j] , d + dd);
+        else if(p == 1 && q == 2) continue;
+        else if(min(p,q) <= 2){
+            int a = min(p,q);
+            for(int cnt=1,k=a==1?j+1:j-2;;a==1?++k:--k){
+                int t = s>>w2[k]&3;
+                if(t == a) ++cnt;
+                if(t == (a^3)) --cnt;
+                if(cnt == 0){
+                    ins(s ^ (3^p^q)<<w2[k] ^ p<<w2[j-1] ^ q<<w2[j] , d + dd);
+                    break;
+                }
+            }
+        }
+        else{
+            if(!(s ^ p<<w2[j-1] ^ q<<w2[j])) ans = max(ans , d + dd);
+        }
+    }
+}
+
+int work(){
+    scanf("%d%d",&n,&m);
+    ans = 0;
+    rep(i,1,n+1) rep(j,1,m+1) scanf("%d",&g[i][j]) , ans = max(ans , g[i][j]);
+    rep(i,0,30) w2[i] = i+i;
+    hm[c].ini();hm[c].ins(0,0);
+    rep(i,1,n+1){
+        c ^= 1;
+        hm[c].ini();
+        rep(k,0,hm[c^1].e){
+            int s = hm[c^1].q[k];
+            if(!(s>>w2[m])) ins(s<<2,hm[c^1].v[s]);
+        }
+        rep(j,1,m+1) Trans(j,g[i][j]);
+    }
+    return ans;
+}
+
+int main(){
+    scanf("%d",&T);
+    set(hm[0].v,-1);set(hm[1].v,-1);
+    rep(i,0,T) printf("%d\n",work());
+    return 0;
+}
+//	K回路无环套环
+const int N = 50505 , M = N<<1;
+inline void pp(int &x,int d){
+    x += d;if(x >= mod) x -= mod;
+}
+int T,n,m,K;
+char g[15][15];
+const int HASH = 10007 , NODE = 15511;
+struct hashmap{
+    int h[HASH] , ne[NODE] , s[NODE] , sum[NODE] , e;
+    void ins(int x,int d){
+        int c = x % HASH;
+        for(int k=h[c];~k;k=ne[k])
+            if(s[k] == x){
+                pp(sum[k],d);
+                return;
+            }
+        s[e] = x , sum[e] = d;
+        ne[e] = h[c] , h[c] = e++;
+    }
+    void ini(){
+        set(h,-1);
+        e = 0;
+    }
+};
+hashmap hm[2][37];int c;
+void wk(){
+    scanf("%d%d%d",&n,&m,&K);
+    rep(i,1,n+1) scanf("%s",g[i]+1);
+    int ex(-1) , ey(-1);
+    rep(i,1,n+1) rep(j,1,m+1){
+        if(g[i][j] == '.') ex = i , ey = j;
+    }
+    if(ex == -1 || K == 0){
+        if(ex == -1 && K == 0) printf("1\n");
+        else printf("0\n");
+        return ;
+    }
+    int w2[20]; rep(i,0,20) w2[i] = i+i;
+    rep(i,0,K) hm[c][i].ini();
+    hm[c][0].ins(0,1);
+    int ans = 0;
+    rep(i,1,n+1){
+        rep(j,0,K) rep(k,0,hm[c][j].e){
+            if(hm[c][j].s[k] >> w2[m]) hm[c][j].sum[k] = 0;
+            else hm[c][j].s[k] <<= 2;
+        }
+        if(i > ex) break;
+        rep(j,1,m+1){
+            if(i == ex && j > ey) break;
+            c ^= 1;
+            rep(o,0,K) hm[c][o].ini();
+            rep(o,0,K){
+                rep(k,0,hm[c^1][o].e){
+                    int s = hm[c^1][o].s[k];
+                    int d = hm[c^1][o].sum[k];
+                    if(d == 0) continue;
+                    //					cout << o << "  " << i << "  " << j << "  " << bitset<10>(s) << "  " << d << endl;
+                    int p = s>>w2[j-1]&3 , q = s>>w2[j]&3 , ns = s^p<<w2[j-1]^q<<w2[j];
+                    if(g[i][j] == '*'){
+                        if(p == 0 && q == 0) hm[c][o].ins(s , d);
+                    }
+                    else if(p == 0 && q == 0) hm[c][o].ins(s ^ 1<<w2[j-1] ^ 2<<w2[j] , d);
+                    else if(p == 0 || q == 0) hm[c][o].ins(s ^ (p|q)<<w2[j-1] ^ (p|q)<<w2[j] , d) ,
+                        hm[c][o].ins(s , d);
+                    else if(p == 2 && q == 1) hm[c][o].ins(ns, d);
+                    else if(p == 1 && q == 2){
+                        int cnt = 0;
+                        rep(k,0,j-1) if(s>>w2[k]&3) ++cnt;
+                        if(cnt&1) continue;
+                        if(o == K-1){
+                            if(ns == 0 && i == ex && j == ey) pp(ans,d);
+                        }
+                        else hm[c][o+1].ins(ns , d);
+                    }
+                    else if(p == q){
+                        for(int cnt=1,k=p==1?j+1:j-2;;p==1?++k:--k){
+                            int t = s>>w2[k]&3;
+                            if(t == p) ++cnt;
+                            if(t == (p^3)) --cnt;
+                            if(cnt == 0){
+                                hm[c][o].ins(ns ^ 3<<w2[k], d);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    printf("%d\n",ans);
+}
+
+int main(){
+    scanf("%d",&T);
+    rep(i,0,T) wk();
+    return 0;
+}
+\end{lstlisting}
+\subsection{Poj4050}
+\begin{lstlisting}[language=C++]
+#include <iostream>
+#include <cstdio>
+#include <map>
+using namespace std;
+typedef long long ll;
+const int Q = 1e4 + 7 , P = Q * Q , N = 100001;
+int n , m;
+int pri[N] , phi[N] , vis[N];
+void Phi(){
+    phi[1] = 1;
+    for(int i=2,p=0;i<N;++i){
+        if(!vis[i]) pri[p++] = i , phi[i] = i-1;
+        for(int j=0,o;j<p&&(o=pri[j]*i)<N;++j){
+            vis[o] = true;
+            phi[o] = phi[i] * (pri[j] - 1);
+            if(i % pri[j] == 0){
+                phi[o] = phi[i] * pri[j];
+                break;
+            }
+        }
+    }
+}
+void pp(int&a,int b){
+    a += b;
+    if(a >= P) a -= P;
+}
+int Pow(int a,int b){ll r=1;for(;b;b>>=1,a=(ll)a*a%P)if(b&1)r=(ll)r*a%P;return r;}
+typedef map<int,int> Poly;
+ll a[100] , b[100] , _;int cnt[4];char s[200];
+void out(Poly a){
+    cout << "~~~~~~~~~~~~~" << endl;
+    for(Poly::iterator i = a.begin();i != a.end();++i)
+        cout << i->first << " " << i->second <<endl;
+}
+Poly operator * (Poly a,Poly b){
+    Poly r;
+    for(Poly::iterator i = a.begin();i != a.end();++i)
+        for(Poly::iterator j = b.begin();j != b.end();++j)
+            pp(r[(i->first + j->first) % P] , (ll)i->second * j->second % P);
+    return r;
+}
+ll solve(int x){
+    if(n / x % 2 == 0 && cnt[0]) return 0;
+    if(cnt[0] + cnt[2] > x) return 0;
+    int ret = 0;
+    for(int i=0;i<_;++i) pp(ret , (ll)Pow(a[i] , x) * b[i] % P);
+    return ret;
+}
+int main(){
+    Phi();
+    while(~scanf("%d%d",&m,&n)&&(n||m)){
+        scanf("%s",s);fill(cnt , cnt + 4 , 0);int Magic = 1;
+        for(int i=0;i<m;++i) cnt[s[i] - 'A']++ , (s[i] - 'A' <= 1 && (Magic<<=1));
+        Poly Po , p[4];Po[0] = 1;p[0][1] = p[1][P-1] = p[1][1] = 1;p[0][P-1] = P-1;
+        p[2][1] = p[3][1] = 1;p[2][0] = P-1;
+        for(int i=0;i<m;++i) Po = Po * p[s[i] - 'A'];
+        _ = 0;
+        for(Poly::iterator i = Po.begin();i != Po.end();++i) if(i->second) a[_] = i->first , b[_++] = i->second;
+        int ans = 0;
+        for(int i=1;i*i<=n;++i) if(n % i == 0){
+            pp(ans , (ll)solve(i) * phi[n/i] % P);
+            if(i * i != n) pp(ans , (ll)solve(n/i) * phi[i] % P);
+        }
+        ans = (ll)ans * Pow(Magic , P-2) % P;
+        if(n % Q == 0) ans = (ll)ans * Pow(n / Q , P - 2) % P / Q;
+        else ans = (ll)ans * Pow(n , P - 2) % Q;
+        printf("%d\n",(int)ans);
+    }
+    return 0;
+}
+\end{lstlisting}
+\subsection{hull}
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <vector>
+#include <cstdio>
+#include <string>
+#include <cmath>
+#include <queue>
+#include <set>
+#include <map>
+#include <complex>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<(b);++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+#define setIO(x) freopen(x".in","r",stdin);freopen(x".out","w",stdout)
+const int N = 50001 * 3;
+typedef complex<ll> P;
+typedef map<ll,P> hull;
+#define X real()
+#define Y imag()
+P a[N] , b[N] , O;int _;
+int A(const P&a){ return (a.X >= 0) ^ ((a.Y < 0) + 1);}
+ll cross(const P&a,const P&b){return (conj(a)*b).Y;}
+bool Cmp(const P&a,const P&b){
+    int x = A(a) , y = A(b);
+    if(x != y) return x < y;
+    return cross(a,b) > 0;
+}
+hull h1,h2;
+bool in(hull&h,ll x,ll y){
+    if(!sz(h)) return false;
+    if(x < h.begin()->se.X || x > h.rbegin()->se.X) return false;
+    auto l = h.lower_bound(x);
+    if(x == l->se.X) return y <= l->se.Y;
+    auto r = l--;
+    return cross(r->se - l->se , P(x,y) - l->se) <= 0;
+}
+
+void ins(hull&h,ll x,ll y){
+    if(in(h , x , y)) return;
+    P p(x,y);h[x] = p;
+    auto LL = h.find(x) , RR = LL , L = LL , R = L;
+    if(LL != h.begin()) --LL;
+    if(*RR != *h.rbegin()) ++RR;
+    if(L != h.begin()) while((L = LL) != h.begin()){
+        --(LL = L);
+        if(cross(p - LL->se , L->se - LL->se) <= 0) h.erase(L);
+        else break;
+    }
+    if(*R != *h.rbegin()) while(*(R = RR) != *h.rbegin()){
+        ++(RR = R);
+        if(cross(p - RR->se , R->se - RR->se) >= 0) h.erase(R);
+        else break;
+    }
+}
+int main(){
+    _ = 0;O = P(0,0);
+    rep(re,0,3){
+        int n;scanf("%d",&n);
+        int id = 0;
+        rep(i,0,n){
+            int x,y;scanf("%d%d",&x,&y);
+            a[i] = P(x,y);
+            if(a[i].Y < a[id].Y || (a[i].Y == a[id].Y && a[i].X < a[id].X)) id = i;
+        }
+        O += a[id];a[n] = a[0];
+        int __ = _;
+        rep(i,id,n) b[__++] = a[i+1] - a[i];
+        rep(i,0,id) b[__++] = a[i+1] - a[i];
+        inplace_merge(b,b+_,b+__,Cmp);
+        _ = __;
+    }
+    a[0] = O;rep(i,0,_) a[i+1] = a[i] + b[i];
+    rep(i,0,_) ins(h1 , a[i].X , a[i].Y) , ins(h2 , a[i].X , -a[i].Y);
+    int m;scanf("%d",&m);
+    rep(i,0,m){
+        int x , y;scanf("%d%d",&x,&y);x*=3;y*=3;
+        puts(in(h1,x,y) && in(h2,x,-y) ? "YES" : "NO");
+    }
+    return 0;
+}
+\end{lstlisting}
+\subsection{三维几何}
+\begin{lstlisting}[language=C++]
+/*	@5388 三维几何
+	T l r x y z, translate points;
+	S l r x y z k, scale points;
+	R r x y z x' y' z' a, rotate points;
+	C i, calculate the current coordinates of the point;
+	L l r, calculate the current length of the polygonal chain.
+*/
+
+
+const int N = (222222 + 10);
+inline int sgn(db x){
+	return fabs(x) < eps ? 0 : (x > 0 ? 1 : -1);
+}
+struct MM{
+	db a[4][4];
+	MM(db x=1) {rep(i,0,4) rep(j,0,4) a[i][j] = i == j ? x : 0;}
+	void in() {*this = MM(); rep(i,0,3) scanf("%lf",&a[0][i]);a[0][3] = 1;}
+	void out() {rep(i,0,3) printf("%.5lf%c",a[0][i]," \n"[i==2]);}
+	db dis() {db ret(0); rep(i,0,3) ret += a[0][i]*a[0][i]; return sqrt(ret);}
+	MM operator -= (const MM&b) {rep(i,0,4) rep(j,0,4) a[i][j] -= b.a[i][j];return *this;}
+	MM operator *= (const MM&b) {MM tmp(0);rep(i,0,4) rep(j,0,4) rep(k,0,4) tmp.a[i][j] += a[i][k] * b.a[k][j]; return *this = tmp;}
+	bool operator == (const MM&b) {rep(i,0,4) rep(j,0,4) if(sgn(a[i][j] - b.a[i][j])) return false; return true;}
+	MM(db x,db y,db z){ // Translation
+		*this = MM(1); a[3][0] = x , a[3][1] = y , a[3][2] = z;
+	}
+	MM(db x ,db y,db z,db k){ // Scaling
+		*this = MM(k); a[3][0] = (1-k)*x , a[3][1] = (1-k)*y , a[3][2] = (1-k)*z , a[3][3] = 1;
+	}
+	MM(db x ,db y,db z,db xx,db yy,db zz,double aa){ // Rotation
+		MM t1 = MM(-x,-y,-z) , t2 = MM(x,y,z);
+		db d = sqrt(xx*xx+yy*yy+zz*zz); x = xx/d , y = yy/d , z = zz/d;
+		db COS = cos(aa) , SIN = sin(aa);
+		*this = MM(1);
+		a[0][0] = x*x*(1-COS) + COS , a[0][1] = x*y*(1-COS) + z*SIN	 , a[0][2] = x*z*(1-COS) - y*SIN;
+		a[1][0] = x*y*(1-COS) - z*SIN,a[1][1] = y*y*(1-COS) + COS   , a[1][2] = y*z*(1-COS) + x*SIN;
+		a[2][0] = x*z*(1-COS) + y*SIN,a[2][1] = y*z*(1-COS)	- x*SIN , a[2][2] = z*z*(1-COS) + COS;
+		t1 *= *this , t1 *= t2;
+		*this = t1;
+	}
+	void oo(){
+		rep(i,0,4) rep(j,0,4) printf("%.5lf%c",a[i][j]," \n"[j==3]);
+	}
+}I,a[N<<2];
+#define pos int x,int l,int r
+#define lson x<<1
+#define rson x<<1|1
+#define left lson,l,m
+#define right rson,m+1,r
+#define getm int m=(l+r)>>1
+double c[N<<2] , ans[N<<2];
+void Build(pos){
+	a[x] = I; c[x] = 1;
+	if(l == r){
+		a[x].in();
+		return;
+	}getm;
+	Build(left);Build(right);
+}
+inline void downA(int x){
+	if(!(a[x] == I)) a[lson] *= a[x] ,
+		a[rson] *= a[x] , a[x] = I;
+}
+MM Query(pos,int p){
+	if(l == r) return a[x];
+	getm;downA(x);
+	if(p <= m) return Query(left,p); else return Query(right,p);
+}
+void Modify(pos,int L,int R,MM b){
+	if(L <= l && r <= R){
+		a[x] *= b;
+		return;
+	}getm;downA(x);
+	if(L <= m) Modify(left,L,R,b);
+	if(R > m) Modify(right,L,R,b);
+}
+inline void downC(int x){
+	if(c[x] != 1) ans[lson] *= c[x] , c[lson] *= c[x] ,
+		ans[rson] *= c[x] , c[rson] *= c[x] , c[x] = 1;
+}
+void Change(pos,int p,double v){
+	if(l == r){
+		ans[x] = v;
+		return;
+	}getm;downC(x);
+	if(p <= m) Change(left,p,v); else Change(right,p,v);
+	ans[x] = ans[lson] + ans[rson];
+}
+void mult(pos,int L,int R,double k){
+	if(L <= l && r <= R){
+		c[x] *= k , ans[x] *= k;
+		return;
+	}getm;downC(x);
+	if(L <= m) mult(left,L,R,k);
+	if(R > m) mult(right,L,R,k);
+	ans[x] = ans[lson] + ans[rson];
+}
+double sum(pos,int L,int R){
+	if(L <= l && r <= R) return ans[x];
+	getm;downC(x);
+	double ret = 0;
+	if(L <= m) ret += sum(left,L,R);
+	if(R > m) ret += sum(right,L,R);
+	return ret;
+}
+
+int n , m;
+int main(){
+	int re = 0;
+	while(~scanf("%d%d",&n,&m)){
+		if(n == 0 && m == 0) return 0;
+		printf("Case #%d:\n",++re);
+		Build(1,1,n);
+		rep(i,1,n) Change(1,1,n,i,(Query(1,1,n,i)-=Query(1,1,n,i+1)).dis());
+		char s[100];
+		double x , y , z , xx , yy , zz , k , theta;
+		int l , r;
+		rep(i,0,m){
+			scanf("%s",s);
+			scanf("%d",&l);
+			if(s[0] == 'C')
+				Query(1,1,n,l).out();
+			else{
+				scanf("%d",&r);
+				if(s[0] == 'L'){
+					printf("%.5lf\n",l+1<=r?sum(1,1,n,l,r-1):0);
+				}
+				else{
+					scanf("%lf%lf%lf",&x,&y,&z);
+					if(s[0] == 'T') Modify(1,1,n,l,r,MM(x,y,z));
+					else if(s[0] == 'S'){
+						scanf("%lf",&k);
+						Modify(1,1,n,l,r,MM(x,y,z,k));
+						if(l < r) mult(1,1,n,l,r-1,k);
+					}
+					else if(s[0] == 'R'){
+						scanf("%lf%lf%lf%lf",&xx,&yy,&zz,&theta);
+						Modify(1,1,n,l,r,MM(x,y,z,xx,yy,zz,theta));
+					}
+					if(l > 1) Change(1,1,n,l-1,(Query(1,1,n,l-1)-=Query(1,1,n,l)).dis());
+					if(r < n) Change(1,1,n,r,(Query(1,1,n,r)-=Query(1,1,n,r+1)).dis());
+				}
+			}
+		}
+	}
+	return 0;
+}
+\end{lstlisting}
+\subsection{二分图计数}
+\begin{lstlisting}[language=C++]
+/*	@Gym-100524B
+    带标号2染色二分图种类数 2-->x
+    */
+const int N = 101 , M = N<<1;
+int n;
+ll a[N] , b[N] , c[N] , C[N][N] , e3[N*N];
+inline void pp(ll &x,ll d){
+    x += d; if(x >= mod) x -= mod;
+}
+int main(){
+    rep(i,0,N) rep(j,0,i+1)
+        C[i][j] = j ? (C[i-1][j-1] + C[i-1][j]) % mod : 1;
+    e3[0] = 1;
+    rep(i,1,N*N) e3[i] = e3[i-1] * 3 % mod;
+    a[0] = 1;
+    rep(i,1,N) rep(j,1,i+1)
+        pp(a[i] , e3[j*(i-j)] * C[i-1][j-1] % mod);
+    rep(i,0,N){
+        b[i] = a[i];
+        rep(j,1,i) pp(b[i] , mod - C[i-1][j-1] * b[j] % mod
+                * a[i-j] % mod * 2 % mod);
+    }
+    c[0] = 1;
+    rep(i,1,N) rep(j,1,i+1)
+        pp(c[i] , C[i-1][j-1] * b[j] % mod * c[i-j] % mod);
+    while(~scanf("%d",&n),n) printf("%I64d\n",c[n]);
+    return 0;
+}
+\end{lstlisting}
+\subsection{动态区间第K大}
+\begin{lstlisting}[language=C++]
+/*	@zoj-2112
+    动态区间第K大
+    */
+struct Index:vector<int>{
+    void Pre(){
+        sort(begin(),end());
+        erase(unique(begin(),end()),end());
+    }
+    int rk(int x){
+        return lower_bound(begin(),end(),x) - begin() + 1;
+    }
+}V;
+struct Request{
+    char op;
+    int a , b , kth;
+}R[M];
+int T , n , m , a[N];
+struct node{
+    int l,r,w;
+}po[2500005];
+#define l(x) po[x].l
+#define r(x) po[x].r
+#define w(x) po[x].w
+#define pos int l,int r,int &c
+#define lson l,m,l(c)
+#define rson m+1,r,r(c)
+#define getm int m=l+r>>1
+#define lb(x) (x)&(-x)
+struct Ztree{
+    int L , len , rt[N<<1];
+    void ini(){
+        L = 0;
+        Set(rt,0);
+    }
+    void ins(int x,pos){
+        po[++L] = po[c]; po[c = L].w++;
+        if(l == r)return;
+        getm;if(x <= m) ins(x,lson);
+        else ins(x,rson);
+    }
+    void add(int x,int d,pos){
+        if(c == 0) po[++L] = po[c] , c = L;
+        w(c) += d;
+        if(l == r) return;
+        getm;if(x <= m) add(x,d,lson);
+        else add(x,d,rson);
+    }
+    void Add(int x,int d,int i){
+        for(;i<=n;i+=lb(i))
+            add(x,d,1,len,rt[i]);
+    }vi pl , ml;
+    int query_kth(int l,int r,int kth){
+        if(l == r) return l;getm;
+        int cnt = 0;
+        rep(i,0,sz(pl)) cnt += w(l(pl[i]));
+        rep(i,0,sz(ml)) cnt -= w(l(ml[i]));
+        rep(i,0,sz(pl)) pl[i] = cnt >= kth ? l(pl[i]) : r(pl[i]);
+        rep(i,0,sz(ml)) ml[i] = cnt >= kth ? l(ml[i]) : r(ml[i]);
+        if(cnt >= kth) return query_kth(l,m,kth);
+        else return query_kth(m+1,r,kth - cnt);
+    }
+    int Query_kth(int l,int r,int kth){
+        pl.clear();ml.clear();
+        ml.push_back(rt[l == 1 ? 0 : n+l-1]);
+        pl.push_back(rt[n + r]);
+        for(int i=l-1;i>=1;i-=lb(i)) ml.push_back(rt[i]);
+        for(int i=r;i>=1;i-=lb(i)) pl.push_back(rt[i]);
+        return query_kth(1,len,kth);
+    }
+}Z;
+void work(){
+    scanf("%d%d",&n,&m);
+    V.clear();
+    rep(i,1,n+1) scanf("%d",a + i) , V.pb(a[i]);
+    char op[10];
+    rep(i,0,m){
+        scanf("%s%d%d",op,&R[i].a,&R[i].b);
+        R[i].op = op[0];
+        if(op[0] == 'Q') scanf("%d",&R[i].kth);
+        else V.pb(R[i].b);
+    }
+    V.Pre();Z.len = sz(V);Z.ini();
+    rep(i,1,n+1) Z.ins(V.rk(a[i]),1,Z.len,Z.rt[i+n] = Z.rt[i+n-1]);
+    rep(i,0,m){
+        if(R[i].op == 'Q') printf("%d\n",V[Z.Query_kth(R[i].a,R[i].b,R[i].kth) - 1]);
+        else{
+            Z.Add(V.rk(a[R[i].a]) ,			-1 , R[i].a);
+            Z.Add(V.rk(a[R[i].a] = R[i].b) , 1 , R[i].a);
+        }
+    }
+}
+\end{lstlisting}
+\subsection{双并查集}
+\begin{lstlisting}[language=C++]
+#include <iostream>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <cmath>
+#include <ctime>
+#include <queue>
+#include <set>
+#include <map>
+#include <string>
+#include <bitset>
+#include <vector>
+#include <complex>
+#include <algorithm>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<(b);++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+const int N = 300003;
+int n , m , p , par[N] , sz[N] , wson[N] , top[N] , dep[N] , edgecnt[N];
+int A[N] , B[N];
+struct Event{
+    int w,u,v,id;
+}event[N];
+vector<pii> fobid[N] , block;
+int FA(int x){return A[x]==x?x:A[x]=FA(A[x]);}
+int FB(int x){return B[x]==x?(!x||FA(x)!=FA(par[x])?x:B[x]=FB(par[x])):B[x]=FB(B[x]);}
+int Lca(int x,int y){
+    while(top[x]!=top[y]) dep[top[x]]>dep[top[y]]?x=par[top[x]]:y=par[top[y]];
+    return dep[x]<dep[y]?x:y;
+}
+
+int main(){
+    scanf("%d%d%d",&n,&m,&p);
+    rep(i,2,n+1) scanf("%d",par + i),dep[i]=dep[par[i]]+1;
+    rep(i,1,n+1) A[i]=B[i]=i;
+    for(int i=n;i>=2;--i) sz[par[i]]+=++sz[i],(sz[i]>sz[wson[par[i]]])&&(wson[par[i]]=i);
+    rep(i,1,n+1) top[i]=wson[par[i]]==i?top[par[i]]:i;
+    rep(i,0,m) scanf("%d%d%d",&event[i].u,&event[i].v,&event[i].w),event[i].id=i;
+    int t,a,b;rep(i,0,p) scanf("%d%d%d",&t,&a,&b) , fobid[--t].pb(mp(a,b));
+    sort(event,event+m,[&](const Event&a,const Event&b){return a.w<b.w;});
+    ll ans = 0;
+    rep(i,0,m){
+        int u=event[i].u,v=event[i].v,w=event[i].w,id=event[i].id;
+        for(auto&e:fobid[id]){
+            e.fi = FA(e.fi) , e.se = FA(e.se);
+            if(e.fi < e.se) swap(e.fi,e.se);
+        }
+        sort(all(fobid[id]));
+        vector<pii> block , preblock , nxtblock;
+        int lca=Lca(u,v);
+        for(;FB(u)!=FB(lca);u=par[FB(u)])
+            block.pb(mp(FA(u) , dep[u]-dep[FB(u)]+1));
+        for(;FB(v)!=FB(lca);v=par[FB(v)])
+            block.pb(mp(FA(v) , dep[v]-dep[FB(v)]+1));
+        block.pb(mp(FA(lca) , dep[u]+dep[v]-2*dep[lca]+1));
+        sort(all(block));
+        for(int i=0,j=0,k=0;i<sz(block);i=j){
+            pii info = mp(block[j].fi , 0);
+            for(j=i;j<sz(block) && block[j].fi==block[i].fi;++j)
+                info.se += block[j].se;
+            for(;k<sz(fobid[id])&&fobid[id][k].fi == info.fi;++k)
+                edgecnt[FA(fobid[id][k].se)]++;
+            int Sum = 0;
+            for(auto e : preblock){
+                if(edgecnt[e.fi] < 1ll * e.se * info.se)
+                    A[e.fi] = info.fi , Sum += e.se , ans += w;
+                else nxtblock.pb(e);
+                edgecnt[e.fi] = 0;
+            }
+            edgecnt[info.fi] = 0;
+            nxtblock.pb(mp(info.fi , info.se + Sum));
+            swap(preblock , nxtblock);nxtblock.clear();
+        }
+    }
+    printf("%lld\n",ans);
+    return 0;
+}
+\end{lstlisting}
+\subsection{后缀数组}
+\begin{lstlisting}[language=C++]
+/* 后缀数组 */
+// repeat string
+
+int T , n;
+int a[N];
+int ans;
+
+void go(int d){
+	for(int l=0;l+d<n;l+=d){
+		int gt = lcp(l,l+d);
+		int tmp = gt / d;
+		int jp = l - (d - gt%d);
+		if(jp >= 0) tmp = max(tmp , lcp(jp,jp+d) / d);
+		ans = max(tmp + 1 , ans);
+	}
+}
+
+int main(){
+	scanf("%d",&T);
+	rep(re,0,T){
+		scanf("%d",&n);
+		rep(i,0,n){
+			char c[2];
+			scanf("%s",c);
+			a[i] = c[0] - 'a' + 1;
+		}a[n] = 0;
+		da(a,n+1,100);cal_h(a,n);rmq(n);
+		ans = 1;
+		rep(i,1,n+1) go(i);
+		printf("%d\n",ans);
+	}
+	return 0;
+}
+//	字典序最小，repeat string
+void go(int d){
+	int tmp = 0;
+	for(int l=0;l+d<len;l+=d){
+		int gt = lcp(l,l+d);
+		tmp = max(tmp , gt / d);
+		int jp = l - (d - gt%d);
+		if(jp >= 0) tmp = max(tmp , lcp(jp,jp+d) / d);
+	}
+	if(tmp > ans) _q = 0 , ans = tmp;
+	if(tmp >= ans) q[_q++] = d;
+}
+
+int re = 0;
+void out(){
+	for(int i=1;i<=len;++i){
+		int id = sa[i];
+		for(int j=0;j<_q;++j){
+			if(id + q[j] >= len) continue;
+			if(lcp(id,id+q[j]) >= ans * q[j]){
+				s[id + (ans + 1) * q[j]] = 0;
+				printf("Case %d: ",++re);
+				puts(s + id);
+				return;
+			}
+		}
+	}
+}
+
+int main(){
+	while(~scanf("%s",s)){
+		len = strlen(s);
+		if(len == 1 && s[0] == '#') return 0;
+		rep(i,0,len) a[i] = s[i] - 'a' + 100;
+		a[len] = 0;
+		da(a,len+1,200); cal_h(a,len); rmp(len);
+		ans = 0; rep(i,1,len+1) go(i);
+		out();
+	}
+	return 0;
+}
+//	长度不小于K的公共串对
+char s[N];
+int a[N] , n , len , K;
+int who[N];
+ll ans;
+pii st[N];
+int p;
+void cal(int p1,int p2){
+	p = -1;
+	ll tot = 0;
+	rep(i,1,n+1){
+		if(h[i] < K) p = -1 , tot = 0;
+		else{
+			int cnt = 0;
+			if(who[sa[i-1]] == p1) cnt++ , tot += h[i] - K + 1;
+			while(~p && h[i] <= st[p].fi){
+				tot -= 1ll * st[p].se * (st[p].fi - h[i]);
+				cnt += st[p].se;
+				--p;
+			}
+			st[++p] = mp(h[i],cnt);
+			if(who[sa[i]] == p2) ans += tot;
+		}
+	}
+}
+
+
+int main(){
+	while(~scanf("%d",&K)){
+		if(K == 0) return 0;
+		scanf("%s",s);
+		n = len = strlen(s);
+		rep(i,0,len) a[i] = s[i] , who[i] = 1;
+		a[n] = 1; who[n++] = 0;
+		scanf("%s",s);
+		rep(i,0,len) a[n+i] = s[i] , who[n+i] = 2;
+		a[n += len] = 0; who[n] = 0;
+		da(a,n+1,300); cal_h(a,n);
+		ans = 0;
+		cal(1,2); cal(2,1);
+		printf("%I64d\n",ans);
+	}
+	return 0;
+}
+\end{lstlisting}
+\subsection{后缀数组+Mobius}
+\begin{lstlisting}[language=C++]
+/* @hdu5219  后缀数组+Mobius
+串S中不能表示为循环串的子串个数
+循环串->切分成两个或以上一样的串
+*/
+
+const int N = 101100;
+namespace Double{
+	int t[N] , wa[N] , wb[N] , sa[N] , h[N];
+	void sort(int *x,int *y,int n,int m){
+		rep(i,0,m) t[i] = 0;
+		rep(i,0,n) t[x[y[i]]]++;
+		rep(i,1,m) t[i] += t[i-1];
+		per(i,0,n) sa[--t[x[y[i]]]] = y[i];
+	}
+	bool cmp(int *x,int a,int b,int d){
+		return x[a] == x[b] && x[a+d] == x[b+d];
+	}
+	void da(int *s,int n,int m){
+		int *x=wa,*y=wb;
+		rep(i,0,n) x[i] = s[i] , y[i] = i;
+		sort(x,y,n,m);
+		for(int j=1,p=1;p<n;m=p,j<<=1){
+			p = 0;rep(i,n-j,n) y[p++] = i;
+			rep(i,0,n) if(sa[i] >= j) y[p++] = sa[i] - j;
+			sort(x,y,n,m);
+			swap(x,y);p=1;x[sa[0]] = 0;
+			rep(i,1,n) x[sa[i]] = cmp(y,sa[i],sa[i-1],j)?p-1:p++;
+		}
+	}
+	void cal_h(int *s,int n,int *rk){
+		int j,k=0;
+		for(int i=1;i<=n;++i) rk[sa[i]] = i;
+		for(int i=0;i<n;h[rk[i++]] = k)
+			for(k&&--k,j=sa[rk[i]-1];s[i+k]==s[j+k];++k);
+	}
+}
+int Log[N] , in[N] , n;
+struct DA{
+	int p[20][N] , rk[N];
+	void Build(){
+		Double::da(in,n+1,300);
+		Double::cal_h(in,n,rk);
+		for(int i=1;i<=n;++i) p[0][i] = Double::h[i];
+		for(int j=1;1<<j<=n;++j){
+			int lim = n+1-(1<<j);
+			for(int i=1;i<=lim;++i)
+				p[j][i] = min(p[j-1][i] , p[j-1][i+(1<<j>>1)]);
+		}
+	}
+	int lcp(int a,int b){
+		a = rk[a] , b = rk[b];
+		if(a > b) swap(a,b);++a;
+		int t = Log[b-a+1];
+		return min(p[t][a] , p[t][b-(1<<t)+1]);
+	}
+}D1,D2;
+
+int T,mu[N];
+char s[N];
+void wk(){
+	scanf("%s",s);
+	n = strlen(s);
+	rep(i,0,n) in[i] = s[i]; in[n] = 0;
+	D1.Build();
+	rep(i,0,n) in[i] = s[n-i-1];
+	D2.Build();
+	ll ans = (ll)n * (n+1) / 2;
+	for(int l=1;l<<1<=n;++l)
+		for(int c=1;(c+1)*l<=n;++c){
+			int left_len = D2.lcp(n-(c+1)*l,n-c*l);
+			int right_len = (c+1)*l < n ? D1.lcp((c+1)*l,c*l) : 0;
+			int tot_len = l + left_len + right_len;
+			int repeat = tot_len / l;
+			for(int i=2;i<=repeat;++i)
+				ans += mu[i] * (tot_len - l*i + 1);
+			c += right_len / l;
+		}
+		printf("%I64d\n",ans);
+}
+
+int main(){
+	mu[1] = 1;rep(i,1,N) for(int j=i+i;j<N;j+=i) mu[j]-=mu[i];
+	rep(i,2,N) Log[i] = Log[i-1] + ((i&-i) == i);
+	scanf("%d",&T);
+	rep(i,0,T) wk();
+	return 0;
+}
+\end{lstlisting}
+\subsection{后缀自动机}
+\begin{lstlisting}[language=C++]
+/* 后缀自动机 */
+//最长公共子串
+const int N = 250025 * 2;
+int L , rt , last;
+int l[N] , par[N] , ch[N][26];
+void extend(int c){
+    int p = last , np = ++L;
+    last = np;
+    l[np] = l[p] + 1;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = rt;
+    else{
+        int q = ch[p][c];
+        if(l[p] + 1 == l[q]) par[np] = q;
+        else{
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq],ch[q],sizeof ch[nq]);
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+
+int ans , cur , tmp;
+void go(int c){
+    if(ch[cur][c])
+        cur = ch[cur][c] , ++tmp;
+    else{
+        while(cur && ch[cur][c] == 0)
+            cur = par[cur];
+        if(cur) tmp = l[cur] + 1 , cur = ch[cur][c];
+        else cur = rt , tmp = 0;
+    }
+    ans = max(ans , tmp);
+}
+char s[N] , t[N];
+int main(){
+    scanf("%s",s + 1);
+    scanf("%s",t + 1);
+    int len1(strlen(s + 1)) , len2(strlen(t + 1));
+    last = rt = ++L;
+    rep(i,1,len1+1) extend(s[i] - 'a');
+    tmp = ans = 0 ; cur = rt;
+    rep(i,1,len2+1) go(t[i] - 'a');
+    printf("%d\n",ans);
+    return 0;
+}
+//n串最长公共子串
+const int N = 101010 * 2;
+int l[N] , par[N] , ch[N][26];
+int last , rt , L;
+void extend(int c){
+    int p = last , np = ++L;
+    last = np;
+    l[np] = l[p] + 1;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = rt;
+    else{
+        int q = ch[p][c];
+        if(l[p] + 1 == l[q]) par[np] = q;
+        else{
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq] , ch[q] , sizeof(ch[q]));
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+int cur , step;
+int si[N] , ti[N] , b[N] , t[N];
+void go(int c){
+    if(ch[cur][c])
+        cur = ch[cur][c] , ++step;
+    else{
+        while(cur && ch[cur][c] == 0)
+            cur = par[cur];
+        if(cur) step = l[cur] + 1 , cur = ch[cur][c];
+        else cur = rt , step = 0;
+    }
+    si[cur] = max(si[cur],step);
+}
+char s[11][N];
+int len[11];
+int _;
+int main(){
+    for(_=0;~scanf("%s",s[_] + 1);++_);
+    rep(i,0,_) len[i] = strlen(s[i] + 1);
+    rt = last = ++L;
+    rep(i,1,len[0]+1) extend(s[0][i] - 'a');
+    rep(i,1,L+1) ti[i] = l[i];
+    rep(i,1,L+1) ++b[l[i]];
+    rep(i,1,len[0]+1) b[i] += b[i-1];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    rep(i,1,_){
+        cur = rt , step = 0;
+        rep(j,1,len[i]+1) go(s[i][j] - 'a');
+        per(j,1,L+1){
+            int k = t[j];
+            ti[k] = min(ti[k] , si[k]);
+            si[par[k]] = max(si[par[k]] , si[k]);
+            si[k] = 0;
+        }
+    }
+    int ans = 0;
+    rep(i,1,L+1) ans = max(ans,ti[i]);
+    printf("%d\n",ans);
+    return 0;
+}
+//S串中长度小于等于l中出现次数最多的串
+const int N = 250025 * 2;
+int rt , L , last;
+int l[N] , par[N] , r[N] , ch[N][26];
+void extend(int c){
+    int p = last , np = ++L;
+    last = np;
+    l[np] = l[p] + 1;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = rt;
+    else{
+        int q = ch[p][c];
+        if(l[p] + 1 == l[q])
+            par[np] = q;
+        else{
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq],ch[q],sizeof ch[nq]);
+            par[nq] = par[q];
+            par[np] = par[q] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+char s[N];
+int a[N] , b[N] , t[N] , ans[N];
+int main(){
+    scanf("%s",s + 1);
+    int len(strlen(s+1));
+    rt = last = ++L;
+    rep(i,1,len+1) extend(a[i] = s[i] - 'a');
+    rep(i,1,L+1) ++b[l[i]];
+    rep(i,1,len+1) b[i] += b[i-1];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    int p = rt;
+    rep(i,1,len+1) p = ch[p][a[i]] , ++r[p];
+    per(i,1,L+1) r[par[t[i]]] += r[t[i]];
+    rep(i,1,L+1) ans[l[i]] = max(ans[l[i]] , r[i]);
+    per(i,1,L+1) ans[i] = max(ans[i] , ans[i+1]);
+    rep(i,1,len+1) printf("%d\n",ans[i]);
+    return 0;
+}
+// 第K小子串
+const int N = 90009 * 2;
+int l[N] , par[N] , ch[N][26];
+int rt , last , L;
+void extend(int c){
+    int p = last  , np = ++L;
+    last = np;
+    l[np] = l[p] + 1;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = rt;
+    else{
+        int q = ch[p][c];
+        if(l[p] + 1 == l[q]) par[np] = q;
+        else{
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq] , ch[q] , sizeof(ch[nq]));
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+char s[N];
+int b[N] , t[N];
+int sz[N];
+char ans[N];
+void Query(int k){
+    int len = 0;
+    int cur = rt;
+    while(k){
+        rep(i,0,26) if(ch[cur][i]){
+            if(sz[ch[cur][i]] >= k){
+                ans[len++] = 'a' + i;
+                --k;
+                cur = ch[cur][i];
+                break;
+            }
+            else k -= sz[ch[cur][i]];
+        }
+    }
+    ans[len] = 0;
+    printf("%s\n",ans);
+}
+int main(){
+    scanf("%s",s);
+    int len = strlen(s);
+    rt = last = ++L;
+    rep(i,0,len) extend(s[i] - 'a');
+    rep(i,1,L+1) b[l[i]]++;
+    rep(i,0,len) b[i+1] += b[i];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    per(i,1,L+1){
+        int k = t[i];
+        sz[k] = 1;
+        rep(j,0,26) if(ch[k][j])
+            sz[k] += sz[ch[k][j]];
+    }
+
+
+    int Q;
+    for(scanf("%d",&Q);Q--;){
+        int po;
+        scanf("%d",&po);
+        Query(po);
+    }
+    return 0;
+}
+//	S串中不在其他串中出现的子串个数
+const int N = 101010 * 2;
+int l[N] , par[N] , ch[N][26];
+int rt , last , L;
+void extend(int c){
+    int p = last , np = ++L;
+    Set(ch[np],0);
+    last = np; l[np] = l[p] + 1;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = rt;
+    else{
+        int q = ch[p][c];
+        if(l[p] + 1 == l[q]) par[np] = q;
+        else{
+            int nq = ++L;
+            Set(ch[nq],0);
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq] , ch[q] , sizeof(ch[nq]));
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+int T,po;
+ll ans;
+char s[N];
+int len;
+int cur , step , si[N];
+void go(int c){
+    if(ch[cur][c])
+        cur = ch[cur][c] , ++step;
+    else{
+        while(cur && ch[cur][c] == 0)
+            cur = par[cur];
+        if(cur) step = l[cur] + 1 , cur = ch[cur][c];
+        else step = 0 , cur = rt;
+    }
+    si[cur] = max(si[cur] , step);
+}
+int b[N] , t[N];
+void getans(){
+    rep(i,0,len+1) b[i] = 0;
+    rep(i,1,L+1) b[l[i]]++;
+    rep(i,0,len) b[i+1] += b[i];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    per(i,1,L+1){
+        int k = t[i];
+        si[k] = min(si[k],l[k]);
+        si[par[k]] = max(si[par[k]],si[k]);
+    }
+    rep(i,1,L+1) si[i] = max(si[i] , l[par[i]]);
+    ans = 0;
+    rep(i,1,L+1) ans += l[i] - si[i];
+}
+int main(){
+    scanf("%d",&T);
+    rep(re,1,T+1){
+        L = 0; rt = last = ++L;
+        Set(ch[rt],0);
+        scanf("%d",&po);
+        scanf("%s",s);
+        len = strlen(s);
+        rep(i,0,len) extend(s[i] - 'a');
+        rep(i,1,L+1) si[i] = 0;
+        rep(cs,0,po){
+            scanf("%s",s);
+            cur = rt , step = 0;
+            for(int i=0;s[i];++i)
+                go(s[i] - 'a');
+        }
+        getans();
+        printf("Case %d: %lld\n",re,ans);
+    }
+    return 0;
+}
+//	长度不小于k的公共子串个数
+const int N = 101010 * 2;
+char s[N];
+int trans(char c) {
+    if ('a' <= c && c <= 'z')
+        return c - 'a';
+    else return c - 'A' + 26;
+}
+int b[N], t[N];
+int L;
+int l[N], par[N], ch[N][52], r[N];
+int rt, last;
+int len;
+void extend(int c) {
+    int p = last, np = ++L;
+    Set(ch[np], 0);
+    last = np, l[np] = l[p] + 1;
+    while (p && ch[p][c] == 0)
+        ch[p][c] = np, p = par[p];
+    if (!p) par[np] = rt;
+    else {
+        int q = ch[p][c];
+        if (l[p] + 1 == l[q]) par[np] = q;
+        else {
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq], ch[q], sizeof(ch[nq]));
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while (p && ch[p][c] == q)
+                ch[p][c] = nq, p = par[p];
+        }
+    }
+}
+void get_right() {
+    rep(i,1,L+1) r[i] = 0;
+    int p = rt;
+    rep(i,0,len) p = ch[p][trans(s[i])], ++r[p];
+    rep(i,0,len+1) b[i] = 0;
+    rep(i,1,L+1) b[l[i]]++;
+    rep(i,0,len) b[i + 1] += b[i];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    per(i,1,L+1){
+        int k = t[i];
+        r[par[k]] += r[k];
+    }
+}
+void ini() {
+    L = 0;
+    rt = last = ++L;
+    Set(ch[rt],0);
+    scanf("%s", s);
+    len = strlen(s);
+    rep(i,0,len) extend(trans(s[i]));
+    get_right();
+}
+int up , cur , step;
+int g[N];
+ll ans[N] , d[N];
+void go(int c){
+    if(ch[cur][c])
+        cur = ch[cur][c] , step++;
+    else{
+        while(cur && ch[cur][c] == 0)
+            cur = par[cur];
+        if(cur) step = l[cur] + 1 , cur = ch[cur][c];
+        else step = 0 , cur = rt;
+    }
+    d[l[par[cur]] + 1] += r[cur];
+    d[step + 1] -= r[cur];
+    g[par[cur]]++;
+}
+void cal(){
+    up = min(up,len);
+    per(i,1,L+1){
+        int k = t[i];
+        d[l[par[k]] + 1] += 1ll * g[k] * r[k];
+        d[l[k] + 1] -= 1ll * g[k] * r[k];
+        g[par[k]] += g[k];
+    }
+    rep(i,1,up+1) ans[i] = ans[i-1] + d[i];
+    per(i,1,up) ans[i] += ans[i+1];
+}
+
+int main() {
+    int K;
+    while (~scanf("%d", &K)) {
+        if (K == 0) return 0;
+        ini();
+        scanf("%s", s);
+        cur = rt , step = 0;
+        rep(i,1,L+1) g[i] = 0;
+        rep(i,0,len+1) ans[i] = d[i] = 0;
+        up = 0;
+        for(int i=0;s[i];++i) go(trans(s[i])) , ++up;
+        cal();
+        printf("%lld\n", ans[K]);
+    }
+    return 0;
+}
+//	不重叠出现两次子串个数
+const int inf = ~0U>>1;
+const int N = 1010 * 2;
+int l[N] , par[N] , ch[N][26];
+int root , last , L;
+void extend(int c){
+    int p = last , np = ++L; Set(ch[np],0);
+    last = np , l[np] = l[p] + 1;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = root;
+    else{
+        int q = ch[p][c];
+        if(l[p] + 1 == l[q]) par[np] = q;
+        else{
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq] , ch[q] , sizeof(ch[nq]));
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+
+char s[N];
+int len;
+int ans;
+
+int lt[N] , rt[N];
+int b[N] , t[N];
+void cal(){
+    ans = 0;
+    rep(i,1,L+1) lt[i] = inf , rt[i] = -inf;
+    int p = root;
+    rep(i,0,len) p = ch[p][s[i] - 'a'] , lt[p] = rt[p] = i;
+    rep(i,0,len+1) b[i] = 0;
+    rep(i,1,L+1) b[l[i]]++;
+    rep(i,0,len) b[i+1] += b[i];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    per(i,1,L+1){
+        int k = t[i];
+        ans += min(rt[k] - lt[k] , l[k]) - min(rt[k] - lt[k] , l[par[k]]);
+        lt[par[k]] = min(lt[par[k]] , lt[k]);
+        rt[par[k]] = max(rt[par[k]] , rt[k]);
+    }
+}
+
+
+int main(){
+    while(~scanf("%s",s)){
+        len = strlen(s);
+        if(len == 1 && s[0] == '#')
+            return 0;
+        root = last = L = 1;
+        Set(ch[1],0);
+        rep(i,0,len) extend(s[i] - 'a');
+        cal();
+        printf("%d\n",ans);
+    }
+
+    return 0;
+}
+//	子串变为数字,求数字和
+const int N = 101010 * 2;
+int par[N] , l[N] , ch[N][10];
+int root , last , L;
+void extend(int c){
+    int p = last , np = ++L; Set(ch[np],0);
+    l[np] = l[p] + 1;
+    last = np;
+    while(p && ch[p][c] == 0)
+        ch[p][c] = np , p = par[p];
+    if(!p) par[np] = root;
+    else{
+        int q = ch[p][c];
+        if(l[q] == l[p] + 1) par[np] = q;
+        else{
+            int nq = ++L;
+            l[nq] = l[p] + 1;
+            memcpy(ch[nq] , ch[q] , sizeof ch[nq]);
+            par[nq] = par[q];
+            par[q] = par[np] = nq;
+            while(p && ch[p][c] == q)
+                ch[p][c] = nq , p = par[p];
+        }
+    }
+}
+
+int n;
+char s[N];
+int len;
+int maxlen;
+
+void add_string(){
+    scanf("%s",s);
+    len = strlen(s);
+    maxlen = max(maxlen , len);
+    last = root;
+    rep(i,0,len){
+        if(ch[last][s[i] - '0'] == 0 || l[ch[last][s[i] - '0']] != i + 1)
+            extend(s[i] - '0');
+        else last = ch[last][s[i] - '0'];
+    }
+}
+
+const int mod = 2012;
+inline void Update(int &x,int y){
+    x += y;
+    if(x >= mod) x-=mod;
+}
+
+int ans;
+int b[N] , t[N];
+int way[N] , sum[N];
+void get_ans(){
+    ans = 0;
+    rep(i,0,maxlen+1) b[i] = 0;
+    rep(i,1,L+1) b[l[i]]++;
+    rep(i,0,maxlen) b[i+1] += b[i];
+    rep(i,1,L+1) t[b[l[i]]--] = i;
+    rep(i,1,L+1) way[i] = sum[i] = 0;
+    way[1] = 1;
+    rep(i,1,L+1){
+        int p = t[i] , q;
+        Update(ans,sum[p]);
+        rep(c,0,10){
+            if(i == 1 && c == 0) continue;
+            if(ch[p][c] == 0) continue;
+            q = ch[p][c];
+            Update(way[q],way[p]);
+            Update(sum[q],(sum[p] * 10 + c * way[p]) % mod);
+        }
+    }
+    printf("%d\n",ans);
+}
+
+int main(){
+    while(~scanf("%d",&n)){
+        if(n == 0) return 0;
+        root = last = L = 1;
+        Set(ch[1],0);
+        maxlen = 0;
+        rep(i,0,n) add_string();
+        get_ans();
+    }
+    return 0;
+}
+\end{lstlisting}
+\subsection{商品推荐走马灯}
+\begin{lstlisting}[language=C++]
+#include <iostream>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <cmath>
+#include <ctime>
+#include <queue>
+#include <set>
+#include <map>
+#include <string>
+#include <bitset>
+#include <vector>
+#include <complex>
+#include <algorithm>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<(b);++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+const int N = 100005;
+int s[N];int l[N<<1] , n , m;
+
+struct FastIO {
+    static const int S = 1310720;
+    int wpos; char wbuf[S];
+    FastIO() : wpos(0) {}
+    inline int xchar() {
+        static char buf[S];
+        static int len = 0, pos = 0;
+        if (pos == len)
+            pos = 0, len = fread(buf, 1, S, stdin);
+        if (pos == len) return -1;
+        return buf[pos ++];
+    }
+    inline int xuint() {
+        int c = xchar(), x = 0;
+        while (c <= 32 && ~c) c = xchar();
+        if (c == -1) return -1;
+        for (;'0' <= c && c <= '9'; c = xchar()) x = x * 10 + c - '0';
+        return x;
+    }
+    inline int xint() {
+        int s = 1, c = xchar(), x = 0;
+        while (c <= 32) c = xchar();
+        if (c == '-') s = -1, c = xchar();
+        for (; '0' <= c && c <= '9'; c = xchar()) x = x * 10 + c - '0';
+        return x * s;
+    }
+    inline void xstring(char *s) {
+        int c = xchar();
+        while (c <= 32) c = xchar();
+        for(; c > 32; c = xchar()) *s++ = c;
+        *s = 0;
+    }
+    inline void wchar(int x) {
+        if (wpos == S) fwrite(wbuf, 1, S, stdout), wpos = 0;
+        wbuf[wpos ++] = x;
+    }
+    inline void wint(ll x) {
+        if (x < 0) wchar('-'), x = -x;
+
+        char s[24];
+        int n = 0;
+        while (x || !n) s[n ++] = '0' + x % 10, x /= 10;
+        while (n--) wchar(s[n]);
+    }
+    inline void wstring(const char *s) {
+        while (*s) wchar(*s++);
+    }
+    ~FastIO() {
+        if (wpos) fwrite(wbuf, 1, wpos, stdout), wpos = 0;
+    }
+} io;
+void manacher(int *s,int n,int *l){
+    l[0]=1;
+    for(int i=1,j=0;i<(n<<1)-1;++i){
+        int p=i>>1,q=i-p,r=((j+1)>>1)+l[j]-1;
+        l[i]=r<q?0:min(r-q+1,l[(j<<1)-i]);
+        while(p-l[i]!=-1&&q+l[i]!=n&&s[p-l[i]]==s[q+l[i]]) l[i]++;
+        if(q+l[i]-1>r) j=i;
+    }
+}
+
+vector<pair<pii,int> > ql,qr;
+ll sum[N],ans[N];
+struct Tree{
+#define lson c<<1,l,m
+#define rson c<<1|1,m+1,r
+#define pos int c,int l,int r
+    ll sum[N<<2],f[N<<2],g[N<<2],ans[N<<2],len[N<<2];
+    void up(int c){ans[c]=ans[c<<1]+ans[c<<1|1];}
+    void F(int c,ll t){f[c]+=t,ans[c]+=t*sum[c];}
+    void G(int c,ll t){g[c]+=t,ans[c]+=t*len[c];}
+    void down(int c){
+        if(f[c]) F(c<<1,f[c]) , F(c<<1|1,f[c]) , f[c]=0;
+        if(g[c]) G(c<<1,g[c]) , G(c<<1|1,g[c]) , g[c]=0;
+    }
+    void Build(pos){
+        sum[c]=f[c]=g[c]=ans[c]=0;len[c]=r-l+1;
+        if(l==r) sum[c]=(l?::sum[l-1]:0);
+        else {
+            int m=(l+r)>>1;
+            Build(lson);Build(rson);
+            sum[c]=sum[c<<1]+sum[c<<1|1];
+        }
+    }
+    ll Ans(pos,int L,int R){
+        if(L <= l && r <= R) return ans[c];
+        else {
+            int m=(l+r)>>1;ll s=0;
+            down(c);
+            if(L<=m) s+=Ans(lson,L,R);
+            if(R>m) s+=Ans(rson,L,R);
+            return s;
+        }
+    }
+    void Mod(pos,int L,int R,ll x,int type){
+        if(L <= l && r <= R) type?G(c,x):F(c,x);
+        else {
+            int m=(l+r)>>1;
+            down(c);
+            if(L<=m) Mod(lson,L,R,x,type);
+            if(R>m) Mod(rson,L,R,x,type);
+            up(c);
+        }
+    }
+}tree;
+
+void solve(int *s,vector<pair<pii,int> >&v){
+    manacher(s,n,l);
+    sort(all(v));
+    rep(i,0,n) sum[i]=(i?sum[i-1]:0)+s[i];
+#define rt 1,0,n-1
+    tree.Build(rt);
+    for(int i=0,j=0;i<(n<<1)-1;++i){
+        int p=i>>1;
+        if(l[i]){
+            tree.Mod(rt,p-l[i]+1,p,-2,0); // *
+            tree.Mod(rt,p-l[i]+1,p,sum[p]+(i&1?sum[p]:(i?sum[p-1]:0)),1); // +
+        }
+        for(;j<sz(v)&&v[j].fi.fi==i;++j)
+            ans[v[j].se]+=tree.Ans(rt,v[j].fi.se,p);
+    }
+}
+
+int main(){
+    n = io.xint();
+    m = io.xint();
+    rep(i,0,n) s[i] = io.xint();
+    rep(i,0,m){
+        int u , v;
+        u = io.xint() , v = io.xint();
+        --u;--v;
+        if(u > v) swap(u,v);
+        ql.pb(mp(mp(u+v,u),i));
+        if(u==v) continue;
+        u=n-1-u,v=n-1-v;swap(u,v);
+        qr.pb(mp(mp(u+v-1,u),i));
+    }
+    solve(s,ql);
+    reverse(s,s+n);
+    solve(s,qr);
+    rep(i,0,m) io.wint(ans[i]) , io.wchar('\n');
+    return 0;
+}
+\end{lstlisting}
+\subsection{平面图}
+\begin{lstlisting}[language=C++]
+#include <iostream>
+#include <cstring>
+#include <cstdlib>
+#include <cstdio>
+#include <cmath>
+#include <ctime>
+#include <queue>
+#include <set>
+#include <map>
+#include <string>
+#include <bitset>
+#include <vector>
+#include <complex>
+#include <algorithm>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<(b);++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+const int inf = 1e9 + 10;
+typedef db T;
+typedef complex<T> P;
+T dot(P a,P b){return (conj(a)*b).real();}
+T cross(P a,P b){return (conj(a)*b).imag();}
+T angle(P a,P b){return arg(b-a);}
+T angle(P a,P o,P b){return abs(remainder(arg(a-o)-arg(b-o),2.*M_PI));}
+P in(){
+    db x,y;scanf("%lf%lf",&x,&y);
+    return P(x,y);
+}
+const int N = 10100 * 2;
+P a[N],b[N];
+vi g[N],cir[N];db area[N];int id[N] , ccnt;
+struct L{
+    int s,t,c,v,nxt;
+    L(int _s=0,int _t=0,int _c=0,int _v=0){s=_s,t=_t,c=_c,v=_v;}
+}l[N];int lcnt;
+bool Cmp(int x,int y){
+    return angle(b[l[x].s],b[l[x].t]) < angle(b[l[y].s],b[l[y].t]);
+}
+void ins(int u,int v,int c){
+    l[lcnt] = L(u,v,c,0);
+    g[u].pb(lcnt++);
+}
+int cnta,n,m,u,v,c;
+bool in(P a,vi&cir){
+    db ag = 0.;
+    rep(i,0,sz(cir)){
+        P u = b[l[cir[i]].s] , v = b[l[cir[i]].t];
+        db del = angle(u , a , v);
+        if(cross(u - a , v - a) >= 1e-8) ag += del;
+        else ag -= del;
+    }
+    return fabs(ag) > 1;
+}
+bool in(vi&cira,vi&cir){
+    rep(j,0,sz(cira)) if(!in(b[l[cira[j]].s] , cir)) return false;
+    return true;
+}
+
+template<class T>
+struct Dinic{ // [0,n) init!!
+    const static int N = 200 , M = 1000;
+    int s , t , n , h[N] , cur[N] , level[N] , q[N] , e , ne[M] , to[M];
+    T cap[M] , flow;
+    void liu(int u,int v,T w){ to[e] = v;ne[e] = h[u];cap[e] = w;h[u] = e++;};
+    void link(int u,int v,T w){ liu(u , v , w);liu(v , u , 0);}
+    void ini(int _n = N) { fill(h , h + (n=_n) , -1);e = 0;}
+    bool bfs(){
+        int L = 0 , R = 0;
+        fill(level , level + n , -1);
+        level[q[R++] = s] = 0;
+        while(L < R && level[t] == -1){
+            int c = q[L++];
+            for(int k=h[c];~k;k=ne[k])
+                if(cap[k] > 0 && level[to[k]] == -1)
+                    level[q[R++] = to[k]] = level[c] + 1;
+        }
+        return ~level[t];
+    }
+    T dfs(int c,T mx){
+        if(c == t) return mx;
+        T ret = 0;
+        for(int &k = cur[c];~k;k = ne[k]){
+            if(level[to[k]] == level[c] + 1 && cap[k] > 0){
+                T flow = dfs(to[k] , min(mx , cap[k]));
+                ret += flow;cap[k] -= flow , cap[k^1] += flow;mx -= flow;
+                if(!mx) return ret;
+            }
+        }
+        level[c] = -1;
+        return ret;
+    }
+    T run(int _s,int _t){
+        s = _s , t = _t;
+        while(bfs()){
+            copy(h , h + n , cur);
+            flow += dfs(s,~0U>>1);
+        }
+        return flow;
+    }
+};
+Dinic<int> flow[11];
+int ans[100] , belong[100];
+int SS , TT;
+void dfs(int dep,int mask){
+    flow[dep].run(SS,TT);
+    if(dep == cnta){
+        int c1 = __builtin_popcount(mask);
+        ans[c1] = min(ans[c1] , flow[dep].flow);
+    }
+    else{
+        flow[dep+1] = flow[dep];
+        dfs(dep + 1 , mask << 1);
+        flow[dep+1].link(SS , belong[dep] , inf);
+        dfs(dep + 1 , mask << 1 | 1);
+    }
+}
+
+int main(){
+    fill(ans , ans + 100 , inf);
+    scanf("%d%d%d",&cnta,&n,&m);
+    rep(i,0,cnta) a[i] = in();
+    rep(i,0,n) b[i] = in();
+    b[n] = P(-inf,-inf) , b[n + 1] = P(inf,-inf);
+    b[n + 2] = P(inf,inf) , b[n + 3] = P(-inf,inf);
+    rep(i,0,m){
+        scanf("%d%d%d",&u,&v,&c);
+        --u;--v;
+        ins(u , v , c);
+        ins(v , u , c);
+    }
+    rep(i,0,4) ins(n + i , n + (i+1)%4 , inf) , ins(n + (i+1)%4 , n + i , inf);
+    rep(i,0,n+4){
+        sort(all(g[i]) , Cmp);
+        rep(j,0,sz(g[i])){
+            int u = g[i][j]^1 , v = g[i][(j+1)%sz(g[i])];
+            l[u].nxt = v;
+        }
+    }
+    rep(i,0,lcnt) if(!l[i].v){
+        ++ccnt;int c = i , s = l[i].s;
+        area[ccnt] = 0.;
+        do {l[c].v = ccnt , cir[ccnt].pb(c) , area[ccnt] += cross(b[l[c].s],b[l[c].t]) , c = l[c].nxt;}while(l[c].s != s);
+        //rep(i,0,sz(cir[ccnt])) cout << cir[ccnt][i] << " " << b[l[cir[ccnt][i]].s] << " \n"[i == sz(cir[ccnt]) - 1];
+        //cout << area[ccnt] << endl;
+    }
+    // area < 0 : in
+    db Min = 0;
+    SS = 0 , TT = 0;
+    rep(i,1,ccnt+1) if(area[i] < Min) Min = area[i] , TT = i;
+    rep(i,1,ccnt+1)
+        if(area[i] >= 0){
+            rep(j,1,ccnt+1) if(area[j] < 0 && (fabs(area[j]) > fabs(area[i])))
+                if(in(cir[i], cir[j]))
+                    if(!id[i] || (area[j] > area[id[i]]))
+                        id[i] = j;
+        }
+    rep(i,1,ccnt+1) if(!id[i]) id[i] = i;
+    rep(i,0,cnta) rep(j,1,ccnt+1) if(area[j] < 0 && in(a[i] , cir[j]))
+        if(!belong[i] || area[j] > area[belong[i]]) belong[i] = j;
+    flow[0].ini(ccnt + 1);
+    rep(i,0,lcnt) flow[0].liu(id[l[i].v] , id[l[i^1].v] , l[i].c);
+    dfs(0,0);
+    rep(i,1,cnta+1) printf("%d\n",ans[i]);
+    return 0;
+}
+\end{lstlisting}
+\subsection{平面生成树构造}
+\begin{lstlisting}[language=C++]
+/*	@Gym-100430I
+	平面点集度数已知，构造生成树，线不相交
+*/
+
+const int N = 1001;
+int x[N] , y[N] , d[N] , n;
+vector<pii> ans;
+db ang[N];
+bool cmp(const int a,const int b){
+	return ang[a] < ang[b];
+}
+void solve(int,int,db,vi&);
+void link(int s,vi& v){
+	if(sz(v) == 0) return;
+	int sum = 0 , o = 0 , d1 = 0;
+	for(;o<sz(v);++o){
+		int a = v[o];
+		sum += d[a] - 2;
+		if(sum >= 0 || o + 1 == sz(v)){
+			sum -= d[a] - 2;
+			d1 = -sum;
+			break;
+		}
+	}
+	vi nv , mv;
+	rep(i,0,o) nv.pb(v[i]);
+	rep(i,o+1,sz(v)) mv.pb(v[i]);
+	o = v[o];
+	ans.pb(mp(o,s));
+	db hori = atan2(y[o] - y[s] , x[o] - x[s]);
+	solve(o,d1,hori,nv);
+	solve(o,d[o]-1-d1,hori,mv);
+}
+void solve(int s,int du,db horizon,vi& v){
+	if(sz(v) == 0) return;
+	rep(i,0,sz(v)){
+		int a = v[i];
+		db tmp = atan2(y[a] - y[s] , x[a] - x[s]) - horizon;
+		while(tmp <= -pi) tmp += 2*pi;
+		while(tmp > pi) tmp -= 2*pi;
+		ang[a] = tmp;
+	}
+	sort(all(v),cmp);
+	vi nv;
+	int sum = 0 , psum = 0;
+	rep(i,0,sz(v)){
+		int a = v[i];
+		sum += d[a] - 2;
+		nv.pb(a);
+		if((sum < psum && sum + du >= 1) || i + 1 == sz(v)){
+			psum = sum;
+			link(s,nv);
+			nv.clear();
+		}
+	}
+}
+
+int main(){
+	scanf("%d",&n);
+	rep(i,0,n) scanf("%d%d%d",x + i , y + i , d + i);
+	int start = min_element(x , x + n) - x;
+	vi v; rep(i,0,n) if(i != start) v.pb(i);
+	solve(start,d[start],0.,v);
+	rep(i,0,n-1) printf("%d %d\n",ans[i].fi + 1,ans[i].se + 1);
+	return 0;
+}
+\end{lstlisting}
+\subsection{微软项目经理的挑选方案}
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <vector>
+#include <cstdio>
+#include <string>
+#include <cmath>
+#include <queue>
+#include <set>
+#include <map>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<(b);++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+#define setIO(x) freopen(x".in","r",stdin);freopen(x".out","w",stdout)
+const int N = 202020 , P = 1e9 + 7;
+int n;
+struct ele{
+    int l,r;
+    bool operator < (const ele&b) const{
+        if(r!=b.r) return r<b.r;
+        return l<b.l;
+    }
+}e[N];
+int L[N] , R[N];
+vi V;
+#define lb(x) (x&(-x))
+struct Fenwick{
+    int a[N<<1],l;
+    int Max(int d){
+        int r=0;
+        for(int i=d;i>=1;i-=lb(i)) r=max(r,a[i]);
+        return r;
+    }
+    void ins(int d,int x){
+        for(int i=d;i<=l;i+=lb(i)) a[i]=max(a[i],x);
+    }
+}f,g;
+void pp(int &a,int d){a+=d;if(a>=P)a-=P;}
+int sum[N<<1] , lazy[N<<1];
+#define id(l,r) (l+r)|(l!=r)
+#define pr int c=id(l,r),mid=(l+r)>>1
+void Down(int l,int r){pr;
+    if(lazy[c] != 1){
+        int lc=id(l,mid),rc=id(mid+1,r);
+        lazy[lc] = (ll)lazy[lc]*lazy[c]%P;
+        lazy[rc] = (ll)lazy[rc]*lazy[c]%P;
+        sum[lc] = (ll)sum[lc]*lazy[c]%P;
+        sum[rc] = (ll)sum[rc]*lazy[c]%P;
+        lazy[c] = 1;
+    }
+}
+void Up(int l,int r){pr;
+    int lc=id(l,mid),rc=id(mid+1,r);
+    sum[c] = (sum[lc]+sum[rc])%P;
+}
+void Ins(int l,int r,int x,int d){ pr;
+    if(l == r){
+        pp(sum[c] , d);
+    } else{
+        Down(l,r);
+        if(x<=mid) Ins(l,mid,x,d);
+        else Ins(mid+1,r,x,d);
+        Up(l,r);
+    }
+}
+void Mul2(int l,int r,int L,int R){pr;
+    if(L <= l && r <= R){
+        pp(lazy[c],lazy[c]);
+        pp(sum[c],sum[c]);
+    } else {
+        Down(l,r);
+        if(L<=mid) Mul2(l,mid,L,R);
+        if(R>mid) Mul2(mid+1,r,L,R);
+        Up(l,r);
+    }
+}
+int Sum(int l,int r,int L,int R){pr;
+    if(L <= l && r <= R){
+        return sum[c];
+    } else {
+        Down(l,r);
+        int ret=0;
+        if(L<=mid) pp(ret,Sum(l,mid,L,R));
+        if(R>mid) pp(ret,Sum(mid+1,r,L,R));
+        Up(l,r);
+        return ret;
+    }
+}
+
+
+int main(){
+    scanf("%d",&n);
+    rep(i,1,n+1) scanf("%d%d",&e[i].l,&e[i].r) , V.pb(e[i].l) , V.pb(e[i].r);
+    sort(all(V));V.erase(unique(all(V)) , V.end());
+    sort(e + 1, e + n + 1);
+#define Rk(x) lower_bound(all(V) , x) - V.begin() + 1
+    rep(i,1,n+1) e[i].l = Rk(e[i].l) , e[i].r = Rk(e[i].r);
+    f.l = g.l = sz(V) + 1;
+    rep(i,1,n+1){
+        L[i] = f.Max(e[i].l - 1);
+        f.ins(e[i].r,i);
+    }
+    for(int i=n;i>=1;--i){
+        R[i] = n + 1 - g.Max(f.l - e[i].r);
+        g.ins(f.l - e[i].l + 1 ,n + 1 - i);
+    }
+    fill(lazy,lazy+(N<<1),1);
+    Ins(0,n+1,1,1);Ins(0,n+1,R[1],1);
+    rep(i,2,n+1){
+        Ins(0,n+1,R[i],Sum(0,n+1,L[i]+1,R[i]));
+        Mul2(0,n+1,0,L[i]);
+    }
+    printf("%d\n",Sum(0,n+1,n+1,n+1));
+    return 0;
+}
+\end{lstlisting}
+\subsection{有根树点分治}
+\begin{lstlisting}[language=C++]
+const int N = 201010;
+int vis[N] , n , p[N] , par[N];
+ll q[N] , lim[N] , dis[N] , ans[N];
+vector<pair<int,ll> > g[N];
+ll getans(int x,int y){return ans[y]+q[x]-p[x]*dis[y];}
+void Update(int x,int y){if(dis[y] >= lim[x]) ans[x]=min(ans[x],getans(x,y));}
+
+int getrt(int c){
+    static int par[N] , sz[N] , q[N];
+    int _ = 0;par[q[_++] = c] = -1;
+    rep(i,0,_){
+        int c = q[i];sz[c] = 1;
+        for(auto e : g[c]) if(!vis[e.fi] && e.fi != par[c]) par[q[_++] = e.fi] = c;
+    }
+    for(int i=_-1;i>=0;--i){
+        int c = q[i];
+        if(sz[c]*2>_) return c;
+        sz[par[c]] += sz[c];
+    }return -1;
+}
+void dfs(int c,int rt){
+    Update(c , rt);
+    for(auto e : g[c]) if(!vis[e.fi] && e.fi != par[c]) dfs(e.fi , rt);
+}
+int e[N],_;
+typedef complex<db> PP;
+PP po[N];int f[N],tf;
+db cross(PP a,PP b,PP c){return (conj(b-a)*(c-a)).imag();}
+void Push(int c){
+    e[_++] = c;
+    for(auto e : g[c]) if(!vis[e.fi] && e.fi != par[c]) Push(e.fi);
+}
+void add(int x){
+    PP tp = PP(-dis[x],ans[x]);
+    while(tf > 1 && cross(po[tf-2],po[tf-1],tp) <= 0) --tf;
+    f[tf] = x , po[tf++] = tp;
+}
+void Query(int x){
+    if(tf == 0) return;
+    int l=0,r=tf;
+    while(l+1<r){
+        int m=(l+r)>>1;
+        if(getans(x,f[m]) <= getans(x,f[m-1])) l=m;
+        else r=m;
+    }
+    Update(x,f[l]);
+}
+
+void solve(int c){
+    int rt = getrt(c);
+    vis[rt] = true;
+    if(c != rt){
+        solve(c);_ = tf = 0;
+        for(auto e : g[rt]) if(!vis[e.fi]) Push(e.fi);
+        sort(e , e + _ , [&](int a,int b){return lim[a] < lim[b];});
+        for(int i=par[rt];i!=par[c];i=par[i]) Update(rt , i);
+        for(int i=rt,j=_-1;j>=0;Query(e[j--]))
+            for(;i!=par[c]&&dis[i] >= lim[e[j]];i = par[i])
+                add(i);
+    } else for(auto e : g[rt]) if(!vis[e.fi]) dfs(e.fi,rt);
+    for(auto e : g[rt]) if(!vis[e.fi]) solve(e.fi);
+}
+
+void dfs_ini(int c){
+    q[c] += dis[c] * p[c] , lim[c] = dis[c] - lim[c];
+    for(auto e : g[c]) if(e.fi != par[c])
+        par[e.fi] = c , dis[e.fi] = dis[c] + e.se , dfs_ini(e.fi);
+}
+
+int main(){
+    int u;ll w;
+    scanf("%d%*d",&n);
+    rep(i,2,n+1) scanf("%d%lld%d%lld%lld",&u,&w,p + i,q + i,lim + i) , g[i].pb(mp(u,w)) , g[u].pb(mp(i,w));
+    fill_n(ans+2,n-1,1ll<<62);
+    dfs_ini(1);solve(1);
+    rep(i,2,n+1) printf("%lld\n",ans[i]);
+    return 0;
+}
+\end{lstlisting}
+\subsection{树链剖分}
+\begin{lstlisting}[language=C++]
+/*	@hdu-5405
+	单点修改，去链后子树sum^2和
+*/
+const int N = 101010 , M = N << 1;
+int n , m;
+#define lb(x) ((x)&(-x))
+struct BIT{
+	ll a[N];
+	void ini(){
+		fill(a+1,a+1+n,0);
+	}
+	void Pre(){
+		for(int i=1,j=i+lb(i);i<=n;++i,j=i+lb(i)) if(j<=n) a[j] += a[i];
+	}
+	void add(int x,ll d){
+		for(;x<=n;x+=lb(x)) a[x] += d;
+	}
+	ll sum(int x){
+		ll r=0; for(;x>=1;x-=lb(x)) r += a[x]; return r;
+	}
+};
+BIT bi,bj;
+int to[M] , ne[M] , h[N] , e;
+void link(int u,int v){
+	to[e] = v , ne[e] = h[u];
+	h[u] = e++;
+}
+int par[N] , dep[N] , sz[N] , wson[N];
+int lft[N] , rht[N] , tp[N] , _;
+ll s[N];
+int w[N];ll wsum;
+void dfs(int c,int fa){
+	par[c] = fa , dep[c] = dep[fa] + 1 , sz[c] = 1 , wson[c] = 0;
+	for(int k=h[c];~k;k=ne[k]){
+		int t = to[k];
+		if(t == fa) continue;
+		dfs(t , c);
+		sz[c] += sz[t];
+		if(sz[t] > sz[wson[c]]) wson[c] = t;
+	}
+}
+inline ll sqr(ll x){
+	x %= mod;
+	return x*x%mod;
+}
+void dds(int c,int pa){
+	lft[c] = ++_;
+	tp[c] = pa;
+	bi.a[_] = w[c]; // bi
+	s[c] = w[c];
+	ll tmp = 0;
+	if(wson[c]){
+		dds(wson[c],pa);
+		s[c] += s[wson[c]];
+	}
+	for(int k=h[c];~k;k=ne[k]){
+		int t = to[k];
+		if(t == par[c] || t == wson[c]) continue;
+		dds(t,t);
+		s[c] += s[t];
+		(tmp += sqr(s[t])) %= mod;
+	}
+	rht[c] = _;
+	bj.a[lft[c]] = tmp;
+}
+ll Query_s(int x){
+	return bi.sum(rht[x]) - bi.sum(lft[x]-1);
+}
+void Change(int a,int b){
+	ll del = b - w[a];
+	w[a] = b;wsum += del;
+	bi.add(lft[a],del); // bi
+	int fa = tp[a];
+	while(a = par[fa]){
+		ll gt = Query_s(fa);
+		bj.add(lft[a],sqr(gt) - sqr(gt-del));
+		fa = tp[a];
+	}
+}
+int Query(int a,int b){
+	ll ret = 0;
+	int fa = tp[a] , fb = tp[b];
+	while(fa != fb){
+		if(dep[fa] < dep[fb]) swap(a,b) , swap(fa,fb);
+		ret += bj.sum(lft[a]) - bj.sum(lft[fa]-1);
+		if(wson[a]) ret += sqr(Query_s(wson[a]));
+		ret -= sqr(Query_s(fa));
+		a = par[fa] , fa = tp[a];
+	}
+	if(dep[a] < dep[b]) swap(a,b);
+	if(wson[a]) ret += sqr(Query_s(wson[a]));
+	ret += bj.sum(lft[a]) - bj.sum(lft[b]-1);
+	ret += sqr(wsum - Query_s(b));
+	ret = sqr(wsum) - ret;
+	ret %= mod , (ret += mod) %= mod;
+	return (int)ret;
+}
+void work(){
+	wsum = 0;
+	rep(i,1,n+1) scanf("%d",w+i) , wsum += w[i];
+	int u , v;
+	e = 0;fill(h+1,h+1+n,-1);
+	rep(i,1,n){
+		scanf("%d%d",&u,&v);
+		link(u,v);
+		link(v,u);
+	}
+	bi.ini();bj.ini();
+	dfs(1,0);_=0;dds(1,1);
+	bi.Pre();bj.Pre();
+	int op , a , b;
+	rep(i,0,m){
+		scanf("%d%d%d",&op,&a,&b);
+		if(op == 1) Change(a,b);
+		else printf("%d\n",Query(a,b));
+	}
+}
+int main(){
+	while(~scanf("%d%d",&n,&m)) work();
+	return 0;
+}
+\end{lstlisting}
+\subsection{百度帐号的选取方案}
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <vector>
+#include <cstdio>
+#include <string>
+#include <queue>
+#include <set>
+#include <map>
+#include <bitset>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<b;++i)
+#define per(i,a,b) for(int i=b-1;i>=a;--i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+#define setIO(x) freopen(x".in","r",stdin);freopen(x".out","w",stdout);
+
+namespace Doubling{
+    static const int N = 101010;
+    int t[N] , wa[N] , wb[N] , sa[N] , h[N];
+    void sort(int *x,int *y,int n,int m){
+        rep(i,0,m) t[i] = 0;
+        rep(i,0,n) t[x[y[i]]]++;
+        rep(i,1,m) t[i] += t[i-1];
+        per(i,0,n) sa[--t[x[y[i]]]] = y[i];
+    }
+    bool cmp(int *x,int a,int b,int d){
+        return x[a] == x[b] && x[a+d] == x[b+d];
+    }
+    void da(int *s,int n,int m){
+        int *x=wa,*y=wb;
+        rep(i,0,n) x[i] = s[i] , y[i] = i;
+        sort(x , y , n , m);
+        for(int j=1,p=1;p<n;m=p,j<<=1){
+            p = 0;rep(i,n-j,n) y[p++] = i;
+            rep(i,0,n) if(sa[i] >= j) y[p++] = sa[i] - j;
+            sort(x , y , n , m);
+            std::swap(x , y);p = 1;x[sa[0]] = 0;
+            rep(i,1,n) x[sa[i]] = cmp(y,sa[i],sa[i-1],j)?p-1:p++;
+        }
+    }
+    void cal_h(int *s,int n,int *rk){
+        int j,k=0;
+        for(int i=1;i<=n;++i) rk[sa[i]] = i;
+        for(int i=0;i<n;h[rk[i++]] = k)
+            for(k&&--k,j=sa[rk[i]-1];s[i+k]==s[j+k];++k);
+    }
+}
+struct DA{
+    static const int N = 101010;
+    int p[20][N] , rk[N] , in[N] , Log[N] , n;
+    void Build(){
+        Doubling::da(in,n+1,300);
+        Doubling::cal_h(in,n,rk);
+        Log[0] = -1;for(int i=1;i<=n;++i) Log[i] = Log[i-1] + (i==(i&(-i)));
+        for(int i=1;i<=n;++i) p[0][i] = Doubling::h[i];
+        for(int j=1;1<<j<=n;++j){
+            int lim = n+1-(1<<j);
+            for(int i=1;i<=lim;++i)
+                p[j][i] = std::min(p[j-1][i] , p[j-1][i+(1<<j>>1)]);
+        }
+    }
+    int lcp(int a,int b){
+        a = rk[a] , b = rk[b];
+        if(a > b) std::swap(a , b);++a;
+        int t = Log[b-a+1];
+        return std::min(p[t][a] , p[t][b-(1<<t)+1]);
+    }
+}D1,D2;
+const int N = 101010;
+char s[N];int n;
+vector<pair<pii,int> > V[N] , E[N];
+pii p[N];
+
+const int M = N<<1;
+ll lcnt[N] , rcnt[N];
+ll Sum(int l,int r){
+    return (ll)(l+r)*(r-l+1)>>1;
+}
+ll solve(vector<pair<pii,int> > pv){
+    vector<pii> v;
+    for(auto e : pv){
+        int l = e.fi.fi , r = e.fi.se , L = e.se , R = L+r-l;
+        lcnt[l]++ , lcnt[L+1]-- , rcnt[r]++ , rcnt[R+1]--;
+        v.pb(mp(l-1,1));v.pb(mp(L,2)); // 2 : + , 1 : -
+        v.pb(mp(r-1,-2));v.pb(mp(R,-1));
+    }
+    sort(all(v));
+    ll sz = 0 , sum = 0 , f = 0 , pre = -1 , ret = 0;
+    for(int i=0;i<sz(v);){
+        int nt = v[i].fi;
+        sz += (nt - pre) * f;sum += Sum(pre + 1, nt) * f;
+        for(;i<sz(v) && v[i].fi == nt;++i){
+            if(v[i].se < 0) f += (v[i].se == -2 ? 1 : -1);
+            else ret += (v[i].se == 2 ? 1 : -1) * (nt * sz - sum);
+        }
+        pre = nt;
+    }
+    return ret;
+}
+
+ll solve1(){
+    rep(i,1,n) lcnt[i] += lcnt[i-1] , rcnt[i] += rcnt[i-1];
+    //rep(i,0,n) printf("%d %d\n",lcnt[i] , rcnt[i]);
+    rep(i,1,n) rcnt[i] += rcnt[i-1];
+    ll ret = 0;
+    rep(i,1,n) ret += (Sum(1,i) - rcnt[i-1]) * (n-i - lcnt[i]);
+    return ret;
+}
+void Upf(int &x,int d){
+    if(x < d) x = d;
+}
+int main(){
+    scanf("%s",s);
+    n = strlen(s);
+    D1.n = n;rep(i,0,n) D1.in[i] = s[i];D1.in[n] = 0;
+    D1.Build();
+    D2.n = n;rep(i,0,n) D2.in[i] = s[n-i-1];D2.in[n] = 0;
+    D2.Build();
+    for(int l=1;l<<1<=n;++l)
+        for(int c=1;(c+1)*l<=n;++c){
+            int left_cnt = D2.lcp(n-(c+1)*l , n-c*l);
+            int right_cnt = (c+1)*l<n ? D1.lcp((c+1)*l , c*l) : 0;
+            int tot_len = left_cnt + right_cnt + l;
+            int repeat = tot_len / l;
+            int L = c*l - left_cnt , R = (c+1)*l + right_cnt;
+            for(int i=2;i<=repeat;++i){
+                V[L].pb(mp(mp(L+i*l-1,R-i*l),i)); // r , R , x
+            }
+            c += right_cnt / l;
+        }
+    rep(i,0,n) p[i] = mp(0,0);
+    rep(i,0,n){
+        for(auto e : V[i]) p[e.fi.fi] = max(p[e.fi.fi] , mp(e.fi.se , e.se));
+        for(auto e : V[i]){
+            pii&t = p[e.fi.fi];
+            if(t != mp(0,0)) E[t.se].pb(mp(mp(i , e.fi.fi) , t.fi)) , t = mp(0,0); // l , r , L
+        }
+    }
+    ll ans = 0;
+    rep(i,2,n+1) ans += solve(E[i]);
+    ans += solve1();
+    printf("%lld\n",ans);
+    return 0;
+}
+\end{lstlisting}
+\subsection{线段树+sg}
+\begin{lstlisting}[language=C++]
+/*	@hdu-5345 sg+线段树
+	sg[x][y] = lowbit(max(x,y))
+	矩形并异或和
+*/
+int n , R , C;
+struct event{
+	int l,r,v;
+	event(int _l=0,int _r=0,int _v=0){l=_l,r=_r,v=_v;}
+}e[N<<1]; int ne[N<<1] , h[N] , e_cnt;
+vi w;
+void add(int x,int l,int r,int v){
+	e[e_cnt] = event(l,r,v);
+	ne[e_cnt] = h[x];
+	h[x] = e_cnt++;
+	w.pb(l); w.pb(r+1);
+}
+
+int cal(int l,int r){
+	if(l > r) return 0;
+	int ret = 0;
+	for(int i=1;i<=r;i<<=1){
+		int u , v;
+		u = (r - i) / (2*i) + 1;
+		v = l - 1 < i ? 0 : (l - 1 - i) / (2*i) + 1;
+		if(u-v&1) ret += i;
+	}
+	return ret;
+}
+
+#define lson get_id(l,m)
+#define rson get_id(m+1,r)
+int sum[N<<2] , cov[N<<2] , sz[N<<2] , sgs[N<<2];
+inline int get_id(int l,int r){
+	return l + r | l != r;
+}
+void Build(int l,int r){
+	int x = get_id(l,r);
+	int m = l+r>>1;
+	cov[x] = sz[x] = sgs[x] = 0; //
+	if(l == r){
+		sum[x] = cal(w[l] , w[r+1] - 1);
+		return;
+	}
+	Build(l,m); Build(m+1,r);
+	sum[x] = sum[lson] ^ sum[rson];
+}
+void Cover(int l,int r,int L,int R,int v){
+	int x = get_id(l,r);
+	int m = l+r>>1;
+	if(L <= l && r <= R){
+		cov[x] += v;
+		if(cov[x]){
+			sz[x] = w[r+1] - w[l];
+			sgs[x] = sum[x];
+		}
+		else if(l == r) sz[x] = sgs[x] = 0;
+		else sz[x] = sz[lson] + sz[rson] , sgs[x] = sgs[lson] ^ sgs[rson];
+		return;
+	}
+	if(L <= m) Cover(l,m,L,R,v);
+	if(m < R) Cover(m+1,r,L,R,v);
+	if(!cov[x]) sz[x] = sz[lson] + sz[rson] , sgs[x] = sgs[lson] ^ sgs[rson];
+}
+int sg , szcnt , nowx , covcnt;
+void Query_sz2(int l,int r){
+	int x = get_id(l,r) , m = l+r>>1;
+	if(cov[x]){
+		sg ^= cal(nowx,w[r+1] - 1);
+		szcnt += min(nowx,w[r+1]) - w[l];
+	}
+	else if(l < r){
+		szcnt += sz[lson];
+		Query_sz2(m+1,r);
+	}
+}
+void Query_sz(int l,int r,int L,int R){
+	int x = get_id(l,r) , m = l+r>>1;
+	covcnt += cov[x];
+	if(L <= l && r <= R){
+		if(R == r){
+			if(covcnt) sg ^= cal(nowx,w[r+1]-1) , szcnt += min(nowx,w[r+1]) - w[l];
+			else Query_sz2(l,r);
+		}
+		else if(covcnt) szcnt += w[r+1] - w[l];
+		else szcnt += sz[x];
+		return ;
+	}
+	int cc = covcnt;
+	if(L <= m) Query_sz(l,m,L,R); covcnt = cc;
+	if(m < R) Query_sz(m+1,r,L,R);
+}
+void Query_sgs(int l,int r,int L,int R){
+	int x = get_id(l,r) , m = l+r>>1;
+	covcnt += cov[x];
+	if(L <= l && r <= R){
+		if(covcnt) sg ^= sum[x];
+		else sg ^= sgs[x];
+		return;
+	}
+	int cc = covcnt;
+	if(L <= m) Query_sgs(l,m,L,R); covcnt = cc;
+	if(m < R) Query_sgs(m+1,r,L,R);
+}
+int main(){
+	while(~scanf("%d%d%d",&n,&R,&C)){
+		rep(i,1,R+1) h[i] = -1; e_cnt = 0;
+		w.clear();
+		rep(i,0,n){
+			int x1,x2,y1,y2;
+			scanf("%d%d%d%d",&x1,&y1,&x2,&y2);
+			add(x1,y1,y2,1);
+			add(x2+1,y1,y2,-1);
+		}
+		sort(all(w)); w.erase(unique(all(w)),w.end());
+		Build(0,sz(w)-2);
+		sg = 0;
+		int po = 0;
+		rep(i,1,R+1){
+			for(int k=h[i];~k;k=ne[k]){
+				e[k].l = lower_bound(all(w),e[k].l) - w.begin();
+				e[k].r = lower_bound(all(w),e[k].r+1) - w.begin();
+				Cover(0,sz(w)-2,e[k].l,e[k].r-1,e[k].v);
+			}
+			while(po < sz(w)-1 && w[po] < i) ++po;
+			szcnt = 0 , nowx = i;
+			covcnt = 0; if(po - 1 >= 0) Query_sz(0,sz(w)-2,0,po-1);
+			covcnt = 0; if(po <= sz(w)-2) Query_sgs(0,sz(w)-2,po,sz(w)-2);
+			if(szcnt&1) sg ^= i&(-i);
+		}
+		if(sg) puts("GTW wins"); else puts("DSY wins");
+	}
+	return 0;
+}
+\end{lstlisting}
+\subsection{线段树合并}
+\begin{lstlisting}[language=C++]
+/*	@hiho-1193 线段树合并
+    有根带权树各子树删除最少点变为树堆
+    树堆->父节点权值大于儿子
+    */
+struct Index:vector<int>{
+    void Pre(){
+        sort(begin(),end());
+        erase(unique(begin(),end()),end());
+    }
+    int rk(int x){
+        return lower_bound(begin(),end(),x) - begin() + 1;
+    }
+}R;
+int to[M] , ne[M] , h[N] , e;
+void link(int u,int v){
+    to[e] = v , ne[e] = h[u];
+    h[u] = e++;
+}
+int n;
+int val[N] , ans[N];
+const int NODE = N * 60;
+int lc[NODE] , rc[NODE] , sum[NODE] , L , rt[N] , up;
+int newnode(){
+    ++L; lc[L] = rc[L] = sum[L] = 0;
+    return L;
+}
+int merge(int a,int b){
+    if(a == 0) return b;
+    if(b == 0) return a;
+    int p = newnode();
+    lc[p] = merge(lc[a],lc[b]);
+    rc[p] = merge(rc[a],rc[b]);
+    sum[p] = sum[a] + sum[b];
+    return p;
+}
+int Query(int l,int r,int &p,int L,int R){
+    if(L <= l && r <= R) return sum[p];
+    if(p == 0) return 0;
+    int m = l+r>>1;
+    int ret = 0;
+    if(L <= m ) ret += Query(l,m,lc[p],L,R);
+    if(R > m ) ret += Query(m+1,r,rc[p],L,R);
+    return ret;
+}
+void Update(int l,int r,int &p,int x,int d){
+    if(p == 0) p = newnode();
+    sum[p] += d;
+    if(l == r) return;
+    int m = l+r>>1;
+    if(x <= m) Update(l,m,lc[p],x,d);
+    else Update(m+1,r,rc[p],x,d);
+}
+int Query_R(int l,int r,int p,int x){
+    if(p == 0 || sum[p] == 0) return 0;
+    if(l == r) return l;
+    int m = l+r>>1 , ret = 0;
+    if(x <= m) ret = Query_R(l,m,lc[p],x);
+    if(ret) return ret;
+    return Query_R(m+1,r,rc[p],x);
+}
+void dfs(int c,int fa){
+    rt[c] = newnode();
+    for(int k=h[c];~k;k=ne[k]){
+        if(to[k] == fa) continue;
+        dfs(to[k] , c);
+        rt[c] = merge(rt[c],rt[to[k]]);
+    }
+    ans[c] = Query(1,up,rt[c],1,val[c]) + 1;
+    int l = val[c];
+    Update(1,up,rt[c],val[c],1);
+    int r = val[c] != up ? Query_R(1,up,rt[c],val[c]+1) : 0;
+    if(r) Update(1,up,rt[c],r,-1);
+}
+int main(){
+    while(~scanf("%d",&n)){
+        R.clear();
+        rep(i,0,n) scanf("%d",val+i) , R.push_back(val[i]);
+        R.Pre(); rep(i,0,n) val[i] = R.rk(val[i]);
+        up = R.size();
+        fill(h,h+n,-1);e = 0;
+        int u,v;
+        rep(i,1,n){
+            scanf("%d%d",&u,&v);
+            link(u,v);link(v,u);
+        }
+        L = 0;dfs(0,-1);
+        rep(i,0,n) printf("%d%c",ans[i]," \n"[i==n-1]);
+    }
+    return 0;
+}
+\end{lstlisting}
+\subsection{遗失的支付宝密码}
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <vector>
+#include <cstdio>
+#include <string>
+#include <cmath>
+#include <queue>
+#include <set>
+#include <map>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<(b);++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+#define setIO(x) freopen(x".in","r",stdin);freopen(x".out","w",stdout)
+const int N = 110;
+typedef unsigned int ui;
+int n , m;
+map<vi,ui> Mp;
+int vis[N],fa[N];
+ui Pow[N],sum[N];
+int F(int x){return fa[x]==x?x:fa[x]=F(fa[x]);}
+vi gt(vi v,int c,int all){
+    rep(i,0,all) fa[i] = i;
+    rep(i,0,c) fa[F(v[i+c])] = F(v[i]);
+    int cc = 0;
+    rep(i,0,c+c) {
+        if(!vis[F(v[i])]) vis[F(v[i])] = ++cc;
+        v[i] = vis[F(v[i])] - 1;
+    }
+    rep(i,0,all) vis[i] = 0;
+    return v;
+}
+ui dfs(int c,vi&v){
+    if(Mp.find(v) != Mp.end()) return Mp[v];
+    int cc = 0;
+    for(int e : v) if(!vis[e]) vis[e] = true , ++cc;
+    for(int e : v) vis[e] = false;
+    ui ret = Pow[cc] * sum[n - c];
+    if(c + 2 <= n){
+        vi nv = v;
+        for(int d=c+2;d<=n;d+=2){
+            nv.pb(cc++);nv.pb(cc++);
+            vi nvv = gt(nv,d/2,cc);
+            ret -= dfs(d,nvv);
+        }
+    }
+    return Mp[v] = ret;
+}
+
+int main(){
+    cin >> n >> m;
+    Mp.clear();
+    Pow[0] = 1;rep(i,1,N) Pow[i] = Pow[i-1] * m;
+    sum[0] = 1;rep(i,1,N) sum[i] = Pow[i] + sum[i-1];
+    vi v;
+    dfs(0,v);
+    cout << Mp[v] - 1 << endl;
+    return 0;
+}
+\end{lstlisting}
+\subsection{链上第K大}
+\begin{lstlisting}[language=C++]
+/*	@hysbz-1146
+	树链剖分链上第K大
+*/
+const int N = 80808 , M = N << 1;
+int n,m;
+int val[N] , h[N] , ne[M] , to[M] , e;
+void link(int u,int v){
+	to[e] = v , ne[e] = h[u];
+	h[u] = e++;
+}
+int dep[N] , par[N][17] , lft[N] , rgt[N] , _;
+void dfs(int c,int fa){
+	par[c][0] = fa , dep[c] = dep[fa] + 1 ;
+	lft[c] = ++_;
+	for(int k=h[c];~k;k=ne[k])
+		if(to[k] != fa)
+			dfs(to[k] , c);
+	rgt[c] = _;
+}
+int lca(int a,int b){
+	if(dep[a] < dep[b]) swap(a,b);
+	for(int i=16;i>=0;--i)
+		if(dep[a] - dep[b] >>i&1)
+			a = par[a][i];
+	if(a == b) return a;
+	for(int i=16;i>=0;--i)
+		if(par[a][i] != par[b][i])
+			a = par[a][i] , b = par[b][i];
+	return par[a][0];
+}
+const int DOWN = -1 , UP = 1e8 + 1 , NODE = 12580000;
+inline int get_id(int l,int r){
+	return l+r|l!=r;
+}
+#define get int m=l+r>>1,id=get_id(l,r)
+int rt[N<<1];
+int lc[NODE] , rc[NODE] , sum[NODE] , L;
+void Add(int l,int r,int &p,int x,int d){
+	get;
+	if(!p) p = ++L;
+	if(l == r) sum[p] += d;
+	else{
+		if(x <= m) Add(l,m,lc[p],x,d);
+		else Add(m+1,r,rc[p],x,d);
+		sum[p] = sum[lc[p]] + sum[rc[p]];
+	}
+}
+void add(int l,int r,int L,int R,int val,int d){
+	get;
+	if(L <= l && r <= R) Add(DOWN,UP,rt[id],val,d);
+	else{
+		if(L <= m) add(l,m,L,R,val,d);
+		if(R > m) add(m+1,r,L,R,val,d);
+	}
+}
+vi pl , ml;
+void get_rts(int l,int r,int x,int d){
+	get;
+	if(d == 1) pl.push_back(rt[id]);
+	else ml.push_back(rt[id]);
+	if(l == r) return;
+	else{
+		if(x <= m) get_rts(l,m,x,d);
+		else get_rts(m+1,r,x,d);
+	}
+}
+int Query_kth(int l,int r,int K){
+	get;
+	if(l == r) return l;
+	int cnt = 0;
+	rep(i,0,sz(pl)) cnt += sum[rc[pl[i]]];
+	rep(i,0,sz(ml)) cnt -= sum[rc[ml[i]]];
+	if(cnt >= K){
+		rep(i,0,sz(pl)) pl[i] = rc[pl[i]];
+		rep(i,0,sz(ml)) ml[i] = rc[ml[i]];
+		return Query_kth(m+1,r,K);
+	}
+	else{
+		rep(i,0,sz(pl)) pl[i] = lc[pl[i]];
+		rep(i,0,sz(ml)) ml[i] = lc[ml[i]];
+		return Query_kth(l,m,K - cnt);
+	}
+}
+int Query(int a,int b,int K){
+	pl.clear();ml.clear();
+	int c = lca(a,b);
+	get_rts(1,n,lft[a],1);
+	get_rts(1,n,lft[b],1);
+	get_rts(1,n,lft[c],-1);
+	if(par[c][0]) get_rts(1,n,lft[par[c][0]],-1);
+	return Query_kth(DOWN,UP,K);
+}
+int main(){
+	scanf("%d%d",&n,&m);
+	rep(i,1,n+1) scanf("%d",val+i);
+	e = 0;fill(h+1,h+1+n,-1);
+	int u , v;
+	rep(i,1,n){
+		scanf("%d%d",&u,&v);
+		link(u,v);link(v,u);
+	}
+	_ = 0;dfs(1,0);
+	for(int j=1;1<<j<=n;++j)
+		for(int i=1;i<=n;++i)
+			par[i][j] = par[par[i][j-1]][j-1];
+	rep(i,1,n+1) add(1,n,lft[i],rgt[i],val[i],1);
+	int k , a , b;
+	rep(i,0,m){
+		scanf("%d%d%d",&k,&a,&b);
+		if(k == 0){
+			add(1,n,lft[a],rgt[a],val[a],-1);
+			add(1,n,lft[a],rgt[a],val[a] = b,1);
+		}
+		else{
+			int ans = Query(a,b,k);
+			if(ans == -1) puts("invalid request!");
+			else printf("%d\n",ans);
+		}
+	}
+	return 0;
+}
+\end{lstlisting}
+\subsection{青云的机房组网方案}
+\begin{lstlisting}[language=C++]
+#include <algorithm>
+#include <iostream>
+#include <cstring>
+#include <vector>
+#include <cstdio>
+#include <string>
+#include <queue>
+#include <set>
+#include <map>
+#include <bitset>
+using namespace std;
+typedef long long ll;
+typedef double db;
+typedef pair<int,int> pii;
+typedef vector<int> vi;
+#define de(x) cout << #x << "=" << x << endl
+#define rep(i,a,b) for(int i=a;i<b;++i)
+#define all(x) (x).begin(),(x).end()
+#define sz(x) (int)(x).size()
+#define mp make_pair
+#define pb push_back
+#define fi first
+#define se second
+#define setIO(x) freopen(x".in","r",stdin);freopen(x".out","w",stdout);
+const int N = 101000;
+vi G[N] , fac[N];
+int mu[N] , p[N] , dep[N] , lg[N<<1] , lft[N<<1] , n;
+ll ans;
+struct RMQ{
+    int a[20][N<<1] , L;
+    int rmin(int x,int y){return dep[x] < dep[y] ? x : y;}
+    void Build(){
+        rep(i,1,20){
+            int lim = L + 1 - (1<<i);
+            rep(j,0,lim) a[i][j] = rmin(a[i-1][j] , a[i-1][j+(1<<i>>1)]);
+        }
+    }
+    int lca(int x,int y){
+        if(x == y) return x;
+        x = lft[x] , y = lft[y];
+        if(x > y) swap(x , y);
+        int j = lg[y-x+1];
+        return rmin(a[j][x] , a[j][y+1-(1<<j)]);
+    }
+    void add(int x){
+        a[0][L++] = x;
+    }
+}R;
+vi V[N];
+void dfs(int c,int fa){
+    dep[c] = dep[fa] + 1;
+    lft[c] = R.L;R.add(c);
+    for(int t : fac[p[c]]) V[t].pb(c);
+    for(int t : G[c]) if(t != fa){
+        dfs(t , c);
+        R.add(c);
+    }
+}
+vi g[N];int tp[N] , _ , w;
+ll dn[N] , up[N] , sz[N] , rt;
+void DFS1(int c,int fa){
+    dn[c] = 0;sz[c] = p[c] % w == 0;
+    for(int t : g[c]) if(t != fa){
+        DFS1(t , c);
+        dn[c] += sz[t] * (dep[t] - dep[c]) + dn[t];
+        sz[c] += sz[t];
+    }
+}
+void DFS2(int c,int fa){
+    if(fa == 0) up[c] = 0;
+    for(int t : g[c]) if(t != fa){
+        up[t] = (sz[rt] - 2 * sz[t]) * (dep[t] - dep[c]) + up[c] + dn[c] - dn[t];
+        DFS2(t , c);
+    }
+}
+ll solve(vi&v){
+    if(sz(v) <= 1) return 0;
+    _ = 0;
+    vi del;del.pb(tp[_++] = v[0]);
+    rep(i,1,sz(v)){
+        int lca = R.lca(tp[_-1] , v[i]);
+        vi l;while(_ > 0 && dep[lca] < dep[tp[_-1]]) l.pb(tp[--_]);
+        if(_ == 0 || lca != tp[_-1]) del.pb(tp[_++] = lca);
+        l.pb(tp[_-1]);del.pb(tp[_++] = v[i]);
+        rep(i,1,sz(l)) g[l[i]].pb(l[i-1]);
+    }
+    rep(i,0,_-1) g[tp[i]].pb(tp[i+1]);
+    DFS1(rt = tp[0] , 0);
+    DFS2(rt , 0);
+    ll ret = 0;
+    for(int t : del) {
+        if(p[t] % w == 0) ret += dn[t] + up[t];
+        g[t].clear();
+    }
+    return ret / 2;
+}
+
+int main(){
+    rep(i,2,N+N)  lg[i] = lg[i-1] + (i == (i&-i));
+    mu[1] = 1;rep(i,1,N) for(int j=i+i;j<N;j+=i) mu[j] -= mu[i] , fac[j].pb(i);
+    rep(i,1,N) fac[i].pb(i);
+    scanf("%d",&n);
+    rep(i,1,n+1) scanf("%d",p + i);
+    rep(i,1,n){
+        int u , v;
+        scanf("%d%d",&u,&v);
+        G[u].pb(v);
+        G[v].pb(u);
+    }
+    dfs(1 , 0);
+    R.Build();
+    rep(i,1,N) if(mu[i]) ans += mu[i] * solve(V[w = i]);
+    printf("%lld\n",ans);
+    return 0;
+}
+\end{lstlisting}
