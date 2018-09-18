@@ -11,7 +11,7 @@ void prime(int n) {
 			u[i] = -1;
 			h[i] = (0);
 		}//质数的时候特判 
-		for (int j = 1, k; j <= M && p[j] <= f[i] && i * p[j] <= N; j++){
+		for (int j = 1, k; j <= M && p[j] <= f[i] && i * p[j] <= n; j++){
 			f[k = i * p[j]] = p[j];
 			if (p[j] < f[i]) {
 				g[k] = p[j];

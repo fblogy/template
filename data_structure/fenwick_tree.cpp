@@ -7,7 +7,7 @@ struct Fenwick{
     static const int N =2e5+7;
     int n;T a1[N],a2[N];
     void ini(int _n){ 
-		fill_n(a1+1,n=_n,0);fill_n(a1+1,n=_n,0);
+		fill_n(a1+1,n=_n,0);fill_n(a2+1,n=_n,0);
 	}
 	void add(T *a,int p,T d) { for(; p<=n; p+=p & -p) a[p]+=d; }
 	void add(int l,int r,T d) {
